@@ -1,0 +1,22 @@
+[Unit]
+Description=Home Assistant JS Engine
+After=network-online.target
+Requires=homeassistant.service
+#StartLimitIntervalSec=60
+#StartLimitBurst=5
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=homeassistant
+WorkingDirectory=/opt/homeassistant/homeassistant-jsengine
+EnvironmentFile=/opt/homeassistant/homeassistant-jsengine/hass-token.env
+ExecStart=/usr/bin/nodejs jsengine.js scripts
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/homeassistant-jsengine.log
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target
+
