@@ -19,7 +19,7 @@ There is still some code cleanup pending, and several to-dos, but it is in a tot
 
 ## Basic install
 
-The engine is meant to be used as a Linux service, but can be run directly from commandline. Please refer to the below instructions for creating an access token and [running as a service](#running-as-a-service-systemd)
+The engine is meant to be used as a Linux service, but can be run directly from commandline. Please refer to the below instructions for creating an access token and [running as a service](https://github.com/puzzle-star/homeassistant-jsengine/tree/master?tab=readme-ov-file#installing-as-a-service-systemd).
 
 
 ```
@@ -129,7 +129,7 @@ JSEngine.Entities['light.my_light_entity'].turn_on( { "brightness_pct": 100, "rg
 
 Edit the systemd service file `install/homeassistant-jsengine.service` to adapt it to your installed system username path. The provided one assumes installatation in `/opt/homeassistant/homeassistant-jsengine` under user `homeassistant`, and install it.
 
-Please remember to update the token as per [basic install instructions](#basic-install)
+Please remember to update the token as per [basic install instructions](https://github.com/puzzle-star/homeassistant-jsengine/tree/master?tab=readme-ov-file#basic_install).
 
 ```
 [Unit]
