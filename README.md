@@ -66,7 +66,7 @@ See the `test.js` script in examples directory for reference
 - **entity-updated** (id, state, changed, old_state, entity, old_entity): called when an entity receives an update (either state or attributes changed)
 - **entity-state-changed** (id, state, old_state, entity, old_entity): called when an entity state changes
 
-**Wildcard events:** called based entity-id and states basic matching. Matches can use wildcards (*) in all or part of pattern. Braces `{}` around patterns are mandatory.
+**Wildcard events:** called based entity-id and states basic matching. Matches can use wildcards (*) in all or part of the pattern. Braces `{}` around patterns are mandatory.
 - __module-{__ _script-name_ __}-loaded__ (name, module)
 - __module-{__ _script-name_ __}-unloaded__ (name, module)
 - __entity-{__ _entity-id_ __}-added__ (id, entity)
@@ -76,4 +76,48 @@ See the `test.js` script in examples directory for reference
 - __entity-{__ _entity-id_ __}-state-changed-to-{__ _state_ __}__ (id, state, old_state, entity, old_entity)
 - __entity-{__ _entity-id_ __}-state-changed-from-{__ _state_ __}-to-{__ _state_ __}__ (id, state, old_state, entity, old_entity)
 
+**Accessing the global `JSEngine` object:**
+```
+log(`entities:`, Object.keys(JSEngine.Entities).sort().join(', '));
+log(`services:`, Object.keys(JSEngine.Services).sort().join(', '));`
+log(`current user:`, JSEngine.CurrentUser);
+```
 
+**Acessing a single `entity` object:**
+```
+log(JSEngine.Entities['my_light_entity']);
+
+(example) Entity {
+  id: 'my_light_entity',
+  domain: 'light',
+  name: 'My Light Entity',
+  groups: { ... },
+  entity_id: 'light.my_light_entity', <-- just the same as 'id'
+  state: 'on',
+  attributes: {
+    supported_color_modes: [ 'color_temp', 'xy' ],
+    min_color_temp_kelvin: 2202,
+    max_color_temp_kelvin: 4000,
+    color_mode: 'color_temp',
+    brightness: 255,
+    color_temp_kelvin: 3717,
+    color_temp: 269,
+    hs_color: [ 26.983, 40.252 ],
+    rgb_color: [ 255, 198, 152 ],
+    xy_color: [ 0.439, 0.37 ],
+    ...
+  },
+  last_changed: '...',
+  last_updated: '...',
+  turn_on: [Function: turn_on],
+  turn_off: [Function: turn_off],
+  toggle: [Function: toggle]
+}
+```
+
+**Invoking `entity` object actions:**
+```
+JSEngine.Entities['light.my_light_entity'].turn_off();
+JSEngine.Entities['light.my_light_entity'].turn_on();
+JSEngine.Entities['light.my_light_entity'].toggle();
+```
