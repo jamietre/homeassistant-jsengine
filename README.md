@@ -149,35 +149,10 @@ Edit the systemd service file `install/homeassistant-jsengine.service` to adapt 
 
 Please remember to update the [authentication token](https://developers.home-assistant.io/docs/auth_api/#long-lived-access-token) as per [basic install instructions](https://github.com/puzzle-star/homeassistant-jsengine/tree/master?tab=readme-ov-file#basic-install).
 
-### Edit
+**Edit your `homeassistant-jsengine.service` file if needed to adapt it to your instalation path**
 
 ```
-[Unit]
-Description=Home Assistant JS Engine
-After=network-online.target
-Requires=homeassistant.service
-#StartLimitIntervalSec=60
-#StartLimitBurst=5
-StartLimitIntervalSec=0
-
-[Service]
-Type=simple
-User=homeassistant
-WorkingDirectory=/opt/homeassistant/homeassistant-jsengine
-EnvironmentFile=/opt/homeassistant/homeassistant-jsengine/hass-token.env
-ExecStart=/usr/bin/nodejs jsengine.js scripts
-Restart=always
-RestartSec=10
-StandardOutput=append:/var/log/homeassistant-jsengine.log
-StandardError=inherit
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### Run
-```
-cp -av install/homeassistant-jsengine.service /usr/local/lib/systemd/system/
+cp -av node_modules/homeassistant-jsengine/install/homeassistant-jsengine.service /usr/local/lib/systemd/system/
 systemctl daemon-reload
 systemctl enable homeassistant-jsengine
 systemctl start homeassistant-jsengine
