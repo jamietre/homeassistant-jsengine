@@ -1,5 +1,5 @@
 {
-  "name": "ha-jsengine",
+  "name": "homeassistant-jsengine",
   "version": "1.0.0",
   "description": "Run Home Assistant automations in javascript",
   "main": "jsengine.js",
