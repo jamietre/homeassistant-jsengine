@@ -21,7 +21,7 @@ module.exports = {
 
 		// log(JSEngine);
 		// log(JSEngine.Services.light);
-		// log(JSEngine.Entities['switch.home_living_room_entrance_switch_1_right']);
+		// log(JSEngine.Entities['light.my_light_entity']);
 	},
 
 	stopped: function () {
