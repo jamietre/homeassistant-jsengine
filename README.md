@@ -17,13 +17,10 @@ It's been working since 2022 for my automations. It is still under heavy develop
 
 There is still some code cleanup pending, and several to-dos, but it is in a totally working state.
 
-## Install and testing
-
-Please refer to the blow instructions for creating an access token and running as a service
-
 ## Basic install
 
-The engine is meant to be used as a Linux service, but can be run directly from commandline:
+The engine is meant to be used as a Linux service, but can be run directly from commandline. Please refer to the below instructions for creating an access token and [running as a service](#running-as-a-service-systemd)
+
 
 ```
 npm install
@@ -132,7 +129,7 @@ JSEngine.Entities['light.my_light_entity'].turn_on( { "brightness_pct": 100, "rg
 
 Edit the systemd service file `install/homeassistant-jsengine.service` to adapt it to your installed system username path. The provided one assumes installatation in `/opt/homeassistant/homeassistant-jsengine` under user `homeassistant`, and install it.
 
-Please remember to update the token as per [basic install instructions](https://github.com/puzzle-star/homeassistant-jsengine/master/README.md#install-and-testing)
+Please remember to update the token as per [basic install instructions](#basic-install)
 
 ```
 [Unit]
