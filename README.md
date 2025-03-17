@@ -1,5 +1,5 @@
 # Home Assistant JS Engine
-This is an external engine that exposes Home Assistant entities and services to JavaScript scripts. It works by connecting to HASS WebSocket API, and encapsulates all available entitities as JS objects to be able to simply interact with them using JavaScript.
+This is an external engine that exposes Home Assistant entities and services to JavaScript scripts. It works by connecting to HASS WebSocket API, and encapsulates all available entities as JS objects to be able to simply interact with them using JavaScript.
 
 Scripts are constantly monitored in the `scripts` directory. They will be loaded when the service is started, reloaded when modified, and unloaded when deleted (also before reload).
 
