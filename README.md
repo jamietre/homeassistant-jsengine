@@ -19,22 +19,22 @@ There is still some code cleanup pending, and several to-dos, but it is in a tot
 
 ## Basic install
 
-The engine is meant to be used as a Linux service, but can be run directly from commandline.
+The engine is meant to be used as a Linux service, but can be run directly from commandline. Please refer to the below instructions for [running as a service](https://github.com/puzzle-star/homeassistant-jsengine/tree/master?tab=readme-ov-file#installing-as-a-service-systemd).
 
-Please refer to [how to create an access token](https://developers.home-assistant.io/docs/auth_api/#long-lived-access-token) and to the below instructions for [running as a service](https://github.com/puzzle-star/homeassistant-jsengine/tree/master?tab=readme-ov-file#installing-as-a-service-systemd).
+### Create the Access Token
 
-You can also create one from the UI, under the `User Profile` page, `Security` tab:
+Please refer to [how to create an access token](https://developers.home-assistant.io/docs/auth_api/#long-lived-access-token) in Home Assistant documentation. You can also create one from the UI, under the `User Profile` page, `Security` tab:
 
 ![image](https://github.com/user-attachments/assets/e1c0a3f6-f2aa-45ba-ba80-48d04176ef41)
 
-
+### Install and Test
 ```
 npm install
 echo 'HASS_TOKEN="[your HASS access token - create one for the hass user you want the scripts to run as]"' >hass-token.env
 npm test
 ```
 
-**Run:** (see below for installing as a service)
+### Running from the command-line
 ```
 source hass-token.env && export HASS_TOKEN && nodejs jsengine scripts
 ```
@@ -58,7 +58,13 @@ source hass-token.env && export HASS_TOKEN && nodejs jsengine scripts
 [2025-03-17 08:34:48.382] (test) stopped
 ```
 
-## API available to scripts
+## Usage: 
+
+### Scripts Location
+
+By default, in `[install-path]/scripts`. They will be executed automatically and reloaded if modified.
+
+### API available to scripts
 
 See the `test.js` script in examples directory for reference
 
