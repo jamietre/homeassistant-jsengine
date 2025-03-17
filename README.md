@@ -21,7 +21,11 @@ There is still some code cleanup pending, and several to-dos, but it is in a tot
 
 The engine is meant to be used as a Linux service, but can be run directly from commandline.
 
-Please refer to [how to create an access token](https://developers.home-assistant.io/docs/auth_api/#long-lived-access-token) and to the below instruictions for [running as a service](https://github.com/puzzle-star/homeassistant-jsengine/tree/master?tab=readme-ov-file#installing-as-a-service-systemd).
+Please refer to [how to create an access token](https://developers.home-assistant.io/docs/auth_api/#long-lived-access-token) and to the below instructions for [running as a service](https://github.com/puzzle-star/homeassistant-jsengine/tree/master?tab=readme-ov-file#installing-as-a-service-systemd).
+
+You can also create one from the UI, under the `User Profile` page, `Security` tab:
+
+![image](https://github.com/user-attachments/assets/e1c0a3f6-f2aa-45ba-ba80-48d04176ef41)
 
 
 ```
