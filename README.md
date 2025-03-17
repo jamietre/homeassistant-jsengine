@@ -35,6 +35,7 @@ mkdir -p /opt/homeassistant/homeassistant-jsengine/
 cd /opt/homeassistant/homeassistant-jsengine/
 npm install homeassistant-jsengine
 echo 'HASS_TOKEN="[your HASS access token - create one for the hass user you want the scripts to run as]"' >hass-token.env
+chmod 640 hass-token.env
 mkdir -p scripts
 
 source ./hass-token.env && export HASS_TOKEN && nodejs node_modules/homeassistant-jsengine/jsengine.js node_modules/homeassistant-jsengine/install/examples
