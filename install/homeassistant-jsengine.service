@@ -11,7 +11,8 @@ Type=simple
 User=homeassistant
 WorkingDirectory=/opt/homeassistant/homeassistant-jsengine
 EnvironmentFile=/opt/homeassistant/homeassistant-jsengine/hass-token.env
-ExecStart=/usr/bin/nodejs jsengine.js scripts
+ExecStart=/usr/bin/nodejs node_modules/homeassistant-jsengine/jsengine.js scripts
+
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/log/homeassistant-jsengine.log
