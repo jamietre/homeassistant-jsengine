@@ -17,10 +17,14 @@ It's been working since 2022 for my automations. It is still under heavy develop
 
 There is still some code cleanup pending, and several to-dos, but it is in a totally working state.
 
-## Usage
-It is meant to be used as a Linux service, but can be run directly from commandline:
+## Install and testing
 
-**Install and testing:** (see below for creating an access token and running as a service)
+Please refer to the blow instructions for creating an access token and running as a service
+
+## Basic install
+
+The engine is meant to be used as a Linux service, but can be run directly from commandline:
+
 ```
 npm install
 echo 'HASS_TOKEN="[your HASS access token - create one for the hass user you want the scripts to run as]"' >hass-token.env
@@ -123,3 +127,42 @@ JSEngine.Entities['light.my_light_entity'].toggle();
 
 JSEngine.Entities['light.my_light_entity'].turn_on( { "brightness_pct": 100, "rgb_color": [255,128,255], "transition": 2 } );
 ```
+
+## Installing as a service (systemd)
+
+Edit the systemd service file `install/homeassistant-jsengine.service` to adapt it to your installed system username path. The provided one assumes installatation in `/opt/homeassistant/homeassistant-jsengine` under user `homeassistant`, and install it.
+
+Please remember to update the token as per [basic install instructions](https://github.com/puzzle-star/homeassistant-jsengine/master/README.md#install-and-testing)
+
+```
+[Unit]
+Description=Home Assistant JS Engine
+After=network-online.target
+Requires=homeassistant.service
+#StartLimitIntervalSec=60
+#StartLimitBurst=5
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=homeassistant
+WorkingDirectory=/opt/homeassistant/homeassistant-jsengine
+EnvironmentFile=/opt/homeassistant/homeassistant-jsengine/hass-token.env
+ExecStart=/usr/bin/nodejs jsengine.js scripts
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/homeassistant-jsengine.log
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```
+cp -av install/homeassistant-jsengine.service /usr/local/lib/systemd/system/
+systemctl daemon-reload
+systemctl enable homeassistant-jsengine
+systemctl start homeassistant-jsengine
+```
+
+
