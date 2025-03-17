@@ -1,17 +1,12 @@
 {
   "name": "homeassistant-jsengine",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Run Home Assistant automations in javascript",
   "main": "jsengine.js",
   "dependencies": {
     "home-assistant-js-websocket": "^8.2.0",
     "jsrundir": "^1.0.11",
     "ws": "^8.14.1"
-  },
-  "scripts": {
-    "start": "node jsengine.js",
-    "postinstall": "cp -n install/hass-token.env.install $INIT_CWD/hass-token.env; chmod 640 $INIT_CWD/hass-token.env; chmod 755 $INIT_CWD/install/test.sh;",
-    "test": "./install/test.sh"
   },
   "author": "",
   "license": "ISC"

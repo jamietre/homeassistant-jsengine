@@ -1,3 +1,4 @@
 hass-token.env
 node_modules
 package-lock.json
+scripts/**
