@@ -143,6 +143,8 @@ Edit the systemd service file `install/homeassistant-jsengine.service` to adapt 
 
 Please remember to update the [authentication token](https://developers.home-assistant.io/docs/auth_api/#long-lived-access-token) as per [basic install instructions](https://github.com/puzzle-star/homeassistant-jsengine/tree/master?tab=readme-ov-file#basic-install).
 
+### Edit
+
 ```
 [Unit]
 Description=Home Assistant JS Engine
@@ -167,6 +169,7 @@ StandardError=inherit
 WantedBy=multi-user.target
 ```
 
+### Run
 ```
 cp -av install/homeassistant-jsengine.service /usr/local/lib/systemd/system/
 systemctl daemon-reload
