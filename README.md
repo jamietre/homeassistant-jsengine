@@ -19,7 +19,9 @@ There is still some code cleanup pending, and several to-dos, but it is in a tot
 
 ## Basic install
 
-The engine is meant to be used as a Linux service, but can be run directly from commandline. Please refer to the below instructions for [running as a service](https://github.com/puzzle-star/homeassistant-jsengine/tree/master?tab=readme-ov-file#installing-as-a-service-systemd).
+The engine is meant to be used as a Linux service, but can be run directly from commandline.
+
+Please refer to the below instructions for [running as a service](https://github.com/puzzle-star/homeassistant-jsengine/tree/master?tab=readme-ov-file#installing-as-a-service-systemd) once the basic install is complete.
 
 ### Create the Access Token
 
@@ -29,14 +31,18 @@ Please refer to [how to create an access token](https://developers.home-assistan
 
 ### Install and Test
 ```
-npm install
+mkdir -p /opt/homeassistant/homeassistant-jsengine/
+cd /opt/homeassistant/homeassistant-jsengine/
+npm install homeassistant-jsengine
 echo 'HASS_TOKEN="[your HASS access token - create one for the hass user you want the scripts to run as]"' >hass-token.env
-npm test
+mkdir -p scripts
+
+source ./hass-token.env && export HASS_TOKEN && nodejs node_modules/homeassistant-jsengine/jsengine.js node_modules/homeassistant-jsengine/install/examples
 ```
 
 ### Running from the command-line
 ```
-source hass-token.env && export HASS_TOKEN && nodejs jsengine scripts
+source ./hass-token.env && export HASS_TOKEN && nodejs node_modules/homeassistant-jsengine/jsengine.js scripts
 ```
 
 **Output:**
