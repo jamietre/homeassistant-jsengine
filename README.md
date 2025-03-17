@@ -129,7 +129,7 @@ JSEngine.Entities['light.my_light_entity'].turn_on( { "brightness_pct": 100, "rg
 
 Edit the systemd service file `install/homeassistant-jsengine.service` to adapt it to your installed system username path. The provided one assumes installatation in `/opt/homeassistant/homeassistant-jsengine` under user `homeassistant`, and install it.
 
-Please remember to update the token as per [basic install instructions](https://github.com/puzzle-star/homeassistant-jsengine/tree/master?tab=readme-ov-file#basic_install).
+Please remember to update the token as per [basic install instructions](https://github.com/puzzle-star/homeassistant-jsengine/tree/master?tab=readme-ov-file#basic-install).
 
 ```
 [Unit]
