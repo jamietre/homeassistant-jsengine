@@ -8,10 +8,11 @@ module.exports = {
 		log(`entities:`, Object.keys(JSEngine.Entities).sort().join(', '));
 		log(`current user:`, JSEngine.CurrentUser);
 
-		log(JSEngine.Entities['light.my_light_entity']);
 		log(JSEngine.Services.light);
 
-		JSEngine.Entities['light.my_light_entity'].turn_on( { "brightness_pct": 100, "rgb_color": [255,128,255], "transition": 2 } );
+		// log(JSEngine.Entities['light.my_light_entity']);
+		
+		// JSEngine.Entities['light.my_light_entity'].turn_on( { "brightness_pct": 100, "rgb_color": [255,128,255], "transition": 2 } );
 	},
 
 };
