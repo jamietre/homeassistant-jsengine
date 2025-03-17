@@ -120,4 +120,6 @@ log(JSEngine.Entities['my_light_entity']);
 JSEngine.Entities['light.my_light_entity'].turn_off();
 JSEngine.Entities['light.my_light_entity'].turn_on();
 JSEngine.Entities['light.my_light_entity'].toggle();
+
+JSEngine.Entities['light.my_light_entity'].turn_on( { "brightness_pct": 100, "rgb_color": [255,128,255], "transition": 2 } );
 ```
