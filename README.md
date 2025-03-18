@@ -61,8 +61,8 @@ source ./hass-token.env && export HASS_TOKEN && nodejs node_modules/homeassistan
 (test) light.home_office: on
 (test) sensor.inverter_battery_capacity: ...
 ^C
-[2025-03-17 08:34:48.382] (jsengine) Unloaded: /opt/git/homeassistant-jsengine/examples/test.js
-[2025-03-17 08:34:48.382] (test) stopped
+(jsengine) Unloaded: /opt/git/homeassistant-jsengine/examples/test.js
+(test) stopped
 ```
 
 ## Usage: 
