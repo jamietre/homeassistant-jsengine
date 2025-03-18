@@ -10,7 +10,7 @@ JSON files will also be monitored and (re)loaded automatically. Scripts are noti
 ## Why
 If you are used to JavaScript and do not want to go through the learning curve of Python and YAML templates (or just prefer JS for your automations), this comes to be a very handy tool that adds the capability to use JavaScript for your more complex automations, that may not be easily (or possible at all) implemented using templates.
 
-After waiting for a propoer JS integration and seeing that attempts where stalled for a long time, I decided to run my own one.
+After waiting for a propoer JS integration and seeing that attempts were stalled for a long time, I decided to run my own one.
 
 ## Status
 It's been working since 2022 for my automations. It is still under heavy development and plan to add more capabilities provided by the WebSocket API.
@@ -86,7 +86,7 @@ See the `test.js` script in examples directory for reference
 - **entity-updated** (id, state, changed, old_state, entity, old_entity): called when an entity receives an update (either state or attributes changed)
 - **entity-state-changed** (id, state, old_state, entity, old_entity): called when an entity state changes
 
-**Wildcard events:** called based entity-id and states basic matching. Matches can use wildcards (*) in all or part of the pattern. Braces `{}` around patterns are mandatory.
+**Wildcard events:** called based on entity-id and states basic matching. Matches can use wildcards (*) in all or part of the pattern. Braces `{}` around patterns are mandatory.
 - __module-{__ _script-name_ __}-loaded__ (name, module)
 - __module-{__ _script-name_ __}-unloaded__ (name, module)
 - __entity-{__ _entity-id_ __}-added__ (id, entity)
