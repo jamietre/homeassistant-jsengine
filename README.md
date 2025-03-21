@@ -38,7 +38,7 @@ echo 'HASS_TOKEN="[your HASS access token - create one for the hass user you wan
 chmod 640 hass-token.env
 mkdir -p scripts
 
-source ./hass-token.env && export HASS_TOKEN && nodejs node_modules/homeassistant-jsengine/jsengine.js node_modules/homeassistant-jsengine/install/examples
+source ./hass-token.env && export HASS_TOKEN && nodejs node_modules/homeassistant-jsengine/jsengine.js node_modules/homeassistant-jsengine/examples
 ```
 
 ### Running from the command-line
