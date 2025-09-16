@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+    homeassistant-jsengine:
+        build: .
+        container_name: homeassistant-jsengine
+        restart: unless-stopped
+        volumes:
+            - ./scripts:/usr/src/app/scripts
+        env_file:
+            - .env
