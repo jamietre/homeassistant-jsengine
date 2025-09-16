@@ -1,13 +1,42 @@
 {
-  "name": "homeassistant-jsengine",
-  "version": "1.0.1",
-  "description": "Run Home Assistant automations in javascript",
-  "main": "jsengine.js",
-  "dependencies": {
-    "home-assistant-js-websocket": "^8.2.0",
-    "jsrundir": "^1.0.11",
-    "ws": "^8.14.1"
-  },
-  "author": "",
-  "license": "ISC"
+    "name": "homeassistant-jsengine",
+    "version": "1.0.1",
+    "description": "Run Home Assistant automations in javascript",
+    "main": "dist/jsengine.js",
+    "types": "dist/jsengine.d.ts",
+    "packageManager": "pnpm@10.16.1",
+    "scripts": {
+        "build": "tsc",
+        "dev": "nodemon",
+        "start": "node dist/index.js",
+        "format": "prettier --write .",
+        "typecheck": "tsc --noEmit"
+    },
+    "ts-node": {
+        "files": true
+    },
+    "nodemonConfig": {
+        "watch": [
+            "src/**"
+        ],
+        "ext": "ts,json",
+        "ignore": [
+            "src/**/*.test.ts"
+        ],
+        "exec": "sleep 1 && tsc --project tsconfig-scripts.json &&  node --inspect --stack-trace-limit=1000 -r ts-node/register ./src/index.ts"
+    },
+    "dependencies": {
+        "home-assistant-js-websocket": "^8.2.0",
+        "jsrundir": "^1.0.11"
+    },
+    "devDependencies": {
+        "@types/node": "^20.12.12",
+        "@types/ws": "^8.5.10",
+        "nodemon": "^3.1.10",
+        "ts-node": "^10.9.2",
+        "prettier": "^3.6.2",
+        "typescript": "^5.4.5"
+    },
+    "author": "",
+    "license": "ISC"
 }

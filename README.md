@@ -1,4 +1,37 @@
+# Fork
+
+Forked from very cool [puzzle-star/homeassistant-jsengine](https://github.com/puzzle-star/homeassistant-jsengine) project.
+
+This fork is for my use. Goal is to build out something easier for me to maintain and extend.
+
+## Status
+
+Refactor/migration to typescript seems to work now. Anticipate substantive changes. 
+
+## Roadmap
+
+- [x] Convert to TypeScript
+- [x] Add some dev tooling
+  - [x] nodemon, ts-node for auto restarting on change
+  [x] Factoring changes/arch
+  - [x] Add a centralized logger
+  - [ ] Remove things shared on global/singletons
+  - [ ] Complete implementation of types for classes
+  - [ ] Expose interfaces instead of native classes as types
+  - [ ] Factor promise chains into separate async functions
+  - [ ] Remove pattern-matching API to simplify
+  - [ ] Add scoped pub/sub instead, e.g. `hajs.subscribe(entity, (event: Event) => { ... }`
+  - [ ] pm2 to monitor/restart on crash 
+- [ ] Remove dependnecy on js-rundir, use native fs watch
+- [ ] Expose good types for Home Assistant entities
+- [ ] Publish a types package that can be consumed from npm to simplify developing modules w/ good types
+- [ ] Make a docker image that monitors a volume
+- [ ] Maybe make a real home assitant add-in?
+
+
+\[Original Readme\]
 # Home Assistant JS Engine
+
 This is an external engine that exposes Home Assistant entities and services to JavaScript scripts. It works by connecting to HASS WebSocket API, and encapsulates all available entities as JS objects to be able to simply interact with them using JavaScript.
 
 Scripts are constantly monitored in the `scripts` directory. They will be loaded when the service is started, reloaded when modified, and unloaded when deleted (also before reload).
@@ -8,11 +41,13 @@ JSON files will also be monitored and (re)loaded automatically. Scripts are noti
 **This is not a homeassistant offical integration.**
 
 ## Why
+
 If you are used to JavaScript and do not want to go through the learning curve of Python and YAML templates (or just prefer JS for your automations), this comes to be a very handy tool that adds the capability to use JavaScript for your more complex automations, that may not be easily (or possible at all) implemented using templates.
 
 After waiting for a proper JS integration and seeing that attempts were stalled for a long time, I decided to run my own one.
 
 ## Status
+
 It's been working since 2022 for my automations. It is still under heavy development and plan to add more capabilities provided by the WebSocket API.
 
 There is still some code cleanup pending, and several to-dos, but it is in a totally working state.
@@ -30,6 +65,7 @@ Please refer to [how to create an access token](https://developers.home-assistan
 ![image](https://github.com/user-attachments/assets/e1c0a3f6-f2aa-45ba-ba80-48d04176ef41)
 
 ### Install and Test
+
 ```
 mkdir -p /opt/homeassistant/homeassistant-jsengine/
 cd /opt/homeassistant/homeassistant-jsengine/
@@ -42,11 +78,13 @@ source ./hass-token.env && export HASS_TOKEN && nodejs node_modules/homeassistan
 ```
 
 ### Running from the command-line
+
 ```
 source ./hass-token.env && export HASS_TOKEN && nodejs node_modules/homeassistant-jsengine/jsengine.js scripts
 ```
 
 **Output:**
+
 ```
 (jsengine) Loaded: /opt/git/homeassistant-jsengine/examples/test.js
 (test) module /opt/git/homeassistant-jsengine/examples/test.js: loaded
@@ -65,7 +103,7 @@ source ./hass-token.env && export HASS_TOKEN && nodejs node_modules/homeassistan
 (test) stopped
 ```
 
-## Usage: 
+## Usage:
 
 ### Scripts Location
 
@@ -86,17 +124,19 @@ See the `test.js` script in examples directory for reference
 - **entity-updated** (id, state, changed, old_state, entity, old_entity): called when an entity receives an update (either state or attributes changed)
 - **entity-state-changed** (id, state, old_state, entity, old_entity): called when an entity state changes
 
-**Wildcard events:** called based on entity-id and states basic matching. Matches can use wildcards (*) in all or part of the pattern. Braces `{}` around patterns are mandatory.
-- __module-{__ _script-name_ __}-loaded__ (name, module)
-- __module-{__ _script-name_ __}-unloaded__ (name, module)
-- __entity-{__ _entity-id_ __}-added__ (id, entity)
-- __entity-{__ _entity-id_ __}-removed__ (id, entity)
-- __entity-{__ _entity-id_ __}-updated__ (id, state, changed, old_state, entity, old_entity)
-- __entity-{__ _entity-id_ __}-state-changed__ (id, state, old_state, entity, old_entity)
-- __entity-{__ _entity-id_ __}-state-changed-to-{__ _state_ __}__ (id, state, old_state, entity, old_entity)
-- __entity-{__ _entity-id_ __}-state-changed-from-{__ _state_ __}-to-{__ _state_ __}__ (id, state, old_state, entity, old_entity)
+**Wildcard events:** called based on entity-id and states basic matching. Matches can use wildcards (\*) in all or part of the pattern. Braces `{}` around patterns are mandatory.
+
+- **module-{** _script-name_ **}-loaded** (name, module)
+- **module-{** _script-name_ **}-unloaded** (name, module)
+- **entity-{** _entity-id_ **}-added** (id, entity)
+- **entity-{** _entity-id_ **}-removed** (id, entity)
+- **entity-{** _entity-id_ **}-updated** (id, state, changed, old_state, entity, old_entity)
+- **entity-{** _entity-id_ **}-state-changed** (id, state, old_state, entity, old_entity)
+- **entity-{** _entity-id_ **}-state-changed-to-{** _state_ **}** (id, state, old_state, entity, old_entity)
+- **entity-{** _entity-id_ **}-state-changed-from-{** _state_ **}-to-{** _state_ **}** (id, state, old_state, entity, old_entity)
 
 **Accessing the global `JSEngine` object:**
+
 ```
 log(`entities:`, Object.keys(JSEngine.Entities).sort().join(', '));
 log(`services:`, Object.keys(JSEngine.Services).sort().join(', '));`
@@ -104,6 +144,7 @@ log(`current user:`, JSEngine.CurrentUser);
 ```
 
 **Acessing a single `entity` object:**
+
 ```
 log(JSEngine.Entities['my_light_entity']);
 
@@ -136,6 +177,7 @@ log(JSEngine.Entities['my_light_entity']);
 ```
 
 **Invoking `entity` object actions:**
+
 ```
 JSEngine.Entities['light.my_light_entity'].turn_off();
 JSEngine.Entities['light.my_light_entity'].turn_on();
@@ -158,7 +200,3 @@ systemctl daemon-reload
 systemctl enable homeassistant-jsengine
 systemctl start homeassistant-jsengine
 ```
-
-
-
-
