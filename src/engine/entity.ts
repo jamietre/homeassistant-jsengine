@@ -1,10 +1,9 @@
-import { DiffieHellmanGroupConstructor } from 'crypto';
 import { HaAttributes, HaDomain, HaEntity, HaGroups } from '../types/ha-types';
 
 export class Entity implements HaEntity {
     id: string;
     entity_id!: string;
-    domain: HaDomain;
+    domain: string;
     name!: string;
     groups!: HaGroups;
     state!: string; // on, off?

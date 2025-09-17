@@ -5,10 +5,11 @@ import { error } from 'console';
 import { Service } from './service';
 import { Entity } from './entity';
 import { HomeAssistant } from './home-assistant';
-import { JsModuleConstructor } from '../types/jsmodule';
+import { HaEntityEvents, HaEventMap, JsModuleConstructor } from '../types/jsmodule';
 import { immutableProxy } from './immutable-proxy';
-import { HaEntity } from '../types/ha-types';
+import { AnyHaEntity, HaEntity, HaEvent } from '../types/ha-types';
 import { isEsModule, ModuleExport } from '../util/es-module';
+import { EventBus, EventBusData } from '../util/event-bus';
 
 const match = (pattern: string, str: string) => {
     return new RegExp(
@@ -19,6 +20,11 @@ const match = (pattern: string, str: string) => {
                 .join('.*') +
             '$',
     ).test(str);
+};
+
+type SystemBusEvents = {
+    started: void;
+    stopped: void;
 };
 
 export class JSEngine {
@@ -40,7 +46,11 @@ export class JSEngine {
 
     #engine: any;
     #logger: Logger;
-    // o
+
+    topics = new Map<string, EventBus<any>>();
+    topicsRegex: Array<{ regex: RegExp; topic: EventBus<any> }> = [];
+
+    systemTopic = this.getOrCreateTopic<SystemBusEvents>('system');
 
     constructor(options: { dir: string; token: string | undefined; url: string }, logger: Logger) {
         const { token, dir, url } = options;
@@ -63,15 +73,15 @@ export class JSEngine {
         const self = this;
 
         this.#engine = immutableProxy({
-            get CurrentUser() {
+            get currentUser() {
                 return self.#currentUser;
             },
 
-            get Services() {
+            get services() {
                 return self.#services;
             },
 
-            get Entities() {
+            get entities() {
                 return self.#entities;
             },
 
@@ -90,6 +100,11 @@ export class JSEngine {
         this.#cached.reset();
     }
 
+    async publishEvent(topic: string, event: HaEvent, data: unknown) {
+        const bus = this.topics.get(topic);
+        if (!bus) return;
+        bus.publish(event, data);
+    }
     async #notify(script: string, event: string, ...args: any[]) {
         const module = this.#modules[script];
         if (typeof module !== 'object') {
@@ -151,7 +166,9 @@ export class JSEngine {
         this.#logger.info(`Connected to Home Assistant as ${this.#currentUser.name}`);
         this.#ready = true;
 
-        return this.#notifyAll('started');
+        this.systemTopic.publish(`started`, undefined);
+
+        //return this.#notifyAll('started');
     }
 
     #connectionReady() {
@@ -285,6 +302,15 @@ export class JSEngine {
                     }
                 })
                 .then(() => {
+                    const topic = this.getOrCreateTopic<HaEventMap>(id);
+                    topic.publish('updated', {
+                        id,
+                        event: 'updated',
+                        state: current.state,
+                        changed,
+                        entity: current as AnyHaEntity,
+                        oldEntity: previous as AnyHaEntity,
+                    });
                     this.#logger.debug(`${id}: ${current.state}${changed ? ' [changed]' : ''}`);
 
                     return this.#notifyAllMatch(
@@ -299,6 +325,16 @@ export class JSEngine {
                 })
                 .then(() => {
                     if (changed) {
+                        this.publish(id, 'state-changed', {
+                            id,
+                            event: 'state-changed',
+                            state: current.state,
+                            changed: true,
+                            entity: current,
+                            oldEntity: previous,
+                            oldState: old_state,
+                        });
+
                         this.#logger.debug(`${id}: ${old_state ? old_state : '()'} -> ${current.state}`);
 
                         return this.#notifyAllMatch(
@@ -321,6 +357,15 @@ export class JSEngine {
         return queue;
     }
 
+    publish(id: string, event: HaEntityEvents, data: unknown) {
+        const topic = this.getOrCreateTopic<HaEventMap>(id);
+        topic.publish(event, data as any);
+        for (const item of this.topicsRegex) {
+            if (item.regex.test(id)) {
+                item.topic.publish(event, data as any);
+            }
+        }
+    }
     async #scriptLoaded(name: string, jsModuleExport: ModuleExport<JsModuleConstructor>): Promise<void> {
         // TO DO: wait for pending notifications if previously unloaded (is this needed?)
         this.#logger.info(`Loaded: ${name}`);
@@ -329,6 +374,19 @@ export class JSEngine {
         const module = new Cotr({
             engine: this.#engine,
             loggerFactory: getLogger,
+            getTopic: (entity: string | RegExp) => {
+                if (typeof entity === 'string') {
+                    let topic = this.topics.get(entity) as unknown as EventBus<HaEventMap>;
+                    if (!topic) {
+                        topic = new EventBus<HaEventMap>();
+                        this.topics.set(entity, topic);
+                    }
+                    return topic;
+                }
+                const topic = new EventBus<HaEventMap>();
+                this.topicsRegex.push({ regex: entity, topic });
+                return topic;
+            },
         });
 
         await this.#notifyAllMatch(['moduleLoaded', `module-{${name}}-loaded`], name, module);
@@ -346,18 +404,32 @@ export class JSEngine {
 
         await Promise.all(batch);
 
-        if (this.#ready) {
-            return this.#notify(name, 'started');
+        if (module.started) {
+            this.systemTopic.subscribe('started', (evt) => {
+                module.started!();
+            });
         }
+        if (module.stopped) {
+            this.systemTopic.subscribe('stopped', (evt) => {
+                module.started!();
+            });
+        }
+    }
+
+    private getOrCreateTopic<T extends EventBusData>(name: string) {
+        let topic: EventBus | undefined = this.topics.get(name);
+        if (!topic) {
+            topic = new EventBus();
+            this.topics.set(name, topic);
+        }
+        return topic as EventBus<T>;
     }
 
     async #scriptUnloaded(name: string, module: any) {
         // TO DO: wait for pending notifications (is this needed?)
         this.#logger.info(`Unloaded: ${name}`);
 
-        if (this.#ready) {
-            return this.#notify(name, 'stopped');
-        }
+        this.systemTopic.publish('stopped', undefined);
 
         module.JSEngine = null;
 

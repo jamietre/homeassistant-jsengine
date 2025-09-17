@@ -4,18 +4,31 @@ Forked from very cool [puzzle-star/homeassistant-jsengine](https://github.com/pu
 
 This fork is for my use. Goal is to build out something easier for me to maintain and extend.
 
+## Complete
+
 - [x] Convert to TypeScript
 - [x] Add some dev tooling
   - [x] nodemon, ts-node for auto restarting on change
-  [x] Factoring changes/arch
+- [x] Factoring changes/arch
   - [x] Add a centralized logger
-  - [ ] Remove things shared on global/singletons
-  - [ ] Complete implementation of types for classes
+
+## In Progress
+
+- [ ] Implement `sendMessage` abstraction as method on entities for actions on entities
+- [ ] Factoring changes/arch
+  - [ ] Add scoped pub/sub instead, e.g. `hajs.subscribe(entity, (event: Event) => { ... }`
+
+## To Do
+ 
+- [ ] Factoring changes/arch
   - [ ] Expose interfaces instead of native classes as types
+  - [ ] Complete implementation of types for classes
+  - [ ] Remove things shared on global/singletons
   - [ ] Factor promise chains into separate async functions
   - [ ] Remove pattern-matching API to simplify
-  - [ ] Add scoped pub/sub instead, e.g. `hajs.subscribe(entity, (event: Event) => { ... }`
-  - [ ] pm2 to monitor/restart on crash 
+- [ ] Generate/code types for all entity types
+- [ ] Code generation for types of actual entities available (what does implementation of this look like? Utility function/binary?)
+- [ ] pm2 to monitor/restart on crash 
 - [ ] Remove dependnecy on js-rundir, use native fs watch
 - [ ] Expose good types for Home Assistant entities
 - [ ] Publish a types package that can be consumed from npm to simplify developing modules w/ good types

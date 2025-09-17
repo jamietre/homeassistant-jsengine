@@ -1,33 +1,37 @@
 import { Logger } from '../logger/logger';
-import { HaEntity } from '../types/ha-types';
-import { JsModule, JsModuleOptions } from '../types/jsmodule';
+import { HaEntity, HaEvent } from '../types/ha-types';
+import { HaEventMap, HaEvents, JsEngine, JsModule, JsModuleConfig, TopicProvider } from '../types/jsmodule';
 
 class TestConsumer implements JsModule {
     private logger: Logger;
-    constructor(options: JsModuleOptions) {
+    private getTopic: TopicProvider;
+    private engine: JsEngine;
+    constructor(options: JsModuleConfig) {
         this.logger = options.loggerFactory({ source: 'TestConsumer' });
+        this.getTopic = options.getTopic;
+        this.engine = options.engine;
     }
 
     started() {
         this.logger.debug('Started');
+        const topic = this.getTopic('sensor.s31_id2_current');
+        topic.subscribe('updated', (evt) => {
+            this.logger.info(`Updated: ${evt.id}`);
+            this.logger.info(`entity`, evt);
+        });
+
+        const regexTopic = this.getTopic(/sensor\./);
+        regexTopic.subscribeAll(this.sensorUpdated);
     }
+
+    sensorUpdated = (evt: HaEvents) => {
+        this.logger.info(`${evt.id} UPDATED`);
+        if (evt.entity.domain === 'light') {
+            evt.entity.toggle();
+        }
+    };
     stopped() {
         this.logger.debug('Stopped');
-    }
-    moduleLoaded(script: string) {
-        this.logger.debug(`Loaded ${script}`);
-    }
-    entityAdded(id: string, entity: HaEntity) {
-        this.logger.debug(`Added ${id}`);
-    }
-    entityRemoved(id: string, entity: HaEntity) {
-        this.logger.debug(`Removed ${id}`);
-    }
-    entityUpdated(id: string, state: string, changed: boolean, entity: HaEntity, oldEntity: HaEntity) {
-        this.logger.debug(`Updated ${id}`);
-    }
-    entityStateChanged(id: string, state: string, oldState: string, entity: HaEntity, oldEntity: HaEntity) {
-        this.logger.debug(`State Changed ${id}`);
     }
 }
 

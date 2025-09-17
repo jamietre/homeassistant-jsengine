@@ -6,10 +6,11 @@ import {
     callService,
     subscribeServices,
     subscribeEntities,
+    Connection,
 } from 'home-assistant-js-websocket';
 
 export class HomeAssistant {
-    connection: any = null;
+    connection: Connection | undefined = undefined;
     handlers: { [key: string]: any[] } = {};
     events: Promise<any> = Promise.resolve();
     token: string;
@@ -86,11 +87,11 @@ export class HomeAssistant {
 	}
 */
     subscribeEvent(callback: (event: any) => void, event_type: string) {
-        return this.connection.subscribeEvents((event: any) => callback(event));
+        return this.connection!.subscribeEvents((event: any) => callback(event));
     }
 
     subscribeMqtt(callback: (topic: string, event: any) => void, topic = '#') {
-        return this.connection.subscribeMessage((event: any) => callback(topic, event), {
+        return this.connection!.subscribeMessage((event: any) => callback(topic, event), {
             type: 'subscribe_trigger',
             trigger: {
                 platform: 'mqtt',
@@ -106,7 +107,7 @@ export class HomeAssistant {
             return Promise.reject(new Error('Webhook id required'));
         }
 
-        return this.connection.subscribeMessage((event: any) => callback(webhook_id, event), {
+        return this.connection!.subscribeMessage((event: any) => callback(webhook_id, event), {
             type: 'subscribe_trigger',
             trigger: {
                 platform: 'webhook',
@@ -136,6 +137,17 @@ export class HomeAssistant {
             // this.subscribeWebhook((...triggered) => log('Webhook:', ...triggered), 'test').catch((e) => error(e));
             // this.collectPanels();
 
+            const result = await connection.sendMessagePromise({
+                type: 'call_service',
+                domain: 'switch',
+                service: 'toggle',
+                // Optional
+                target: {
+                    entity_id: 'switch.s31_id3_relay',
+                },
+            });
+            console.log(result);
+
             return this.onConnectionReady();
         } catch (e) {
             this.logger.error(`Error connecting to Home Assistant WebSocket backend`);
@@ -145,15 +157,15 @@ export class HomeAssistant {
     }
 
     connected() {
-        return this.connection && this.connection.conected();
+        return this.connection && this.connection.connected;
     }
 
     getCurrentUser() {
-        return getUser(this.connection);
+        return getUser(this.connection!);
     }
 
     callService(domain: string, service: string, data?: any, target?: any) {
-        return callService(this.connection, domain, service, data, target).catch((e: any) => {
+        return callService(this.connection!, domain, service, data, target).catch((e: any) => {
             this.logger.error('Service error: ', e);
             return Promise.reject(e);
         });
