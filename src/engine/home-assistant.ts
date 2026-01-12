@@ -1,70 +1,78 @@
-import { Logger } from '../logger/logger';
+import { fstat, writeFileSync } from "fs";
+import { Logger } from "../logger/logger";
 import {
-    createConnection,
-    createLongLivedTokenAuth,
-    getUser,
-    callService,
-    subscribeServices,
-    subscribeEntities,
-    Connection,
-} from 'home-assistant-js-websocket';
+  createConnection,
+  createLongLivedTokenAuth,
+  getUser,
+  callService,
+  subscribeServices,
+  subscribeEntities,
+  Connection,
+} from "home-assistant-js-websocket";
+import path from "path";
 
 export class HomeAssistant {
-    connection: Connection | undefined = undefined;
-    handlers: { [key: string]: any[] } = {};
-    events: Promise<any> = Promise.resolve();
-    token: string;
-    url: string;
-    logger: Logger;
+  connection: Connection | undefined = undefined;
+  handlers: { [key: string]: any[] } = {};
+  events: Promise<any> = Promise.resolve();
+  token: string;
+  url: string;
+  logger: Logger;
 
-    constructor(options: { token: string; url: string }, logger: Logger) {
-        // this.api = haWebsocket
-        this.token = options.token;
-        this.url = options.url;
-        this.logger = logger;
-    }
+  constructor(options: { token: string; url: string }, logger: Logger) {
+    // this.api = haWebsocket
+    this.token = options.token;
+    this.url = options.url;
+    this.logger = logger;
+  }
 
-    async notify(event: string, ...args: any[]) {
-        const handlers = this.handlers[event];
-        if (!handlers) return;
+  async notify(event: string, ...args: any[]) {
+    const handlers = this.handlers[event];
+    if (!handlers) return;
 
-        for (const handler of handlers) {
-            this.events = this.events
-                .then(() => {
-                    return handler(...args);
-                })
-                .catch((e) => {
-                    this.logger.error(e);
-                });
-            /*
+    for (const handler of handlers) {
+      this.events = this.events
+        .then(() => {
+          return handler(...args);
+        })
+        .catch((e) => {
+          this.logger.error(e);
+        });
+      /*
 			Promise.resolve(handler(...args)).catch((e) => {
 				error(e);
 			});
 */
-        }
     }
+  }
 
-    onConnectionReady() {
-        return this.notify('connection-ready');
-    }
+  onConnectionReady() {
+    return this.notify("connection-ready");
+  }
 
-    onConnectionDisconnected() {
-        return this.notify('connection-disconnected');
-    }
+  onConnectionDisconnected() {
+    return this.notify("connection-disconnected");
+  }
 
-    onConnectionReconnectError() {
-        return this.notify('connection-reconnect-error');
-    }
+  onConnectionReconnectError() {
+    return this.notify("connection-reconnect-error");
+  }
 
-    onServicesUpdated(services: any) {
-        return this.notify('services-updated', services);
-    }
+  onServicesUpdated(services: any) {
+    // writeFileSync(path.join(__dirname, "services.json"), JSON.stringify(services, null, 4), {
+    //   encoding: "utf-8",
+    // });
+    return this.notify("services-updated", services);
+  }
 
-    onEntitiesUpdated(entities: any) {
-        return this.notify('entities-updated', entities);
-    }
+  onEntitiesUpdated(entities: any) {
+    // writeFileSync(path.join(__dirname, "entities.json"), JSON.stringify(entities, null, 4), {
+    //   encoding: "utf-8",
+    // });
+    return this.notify("entities-updated", entities);
+  }
 
-    /*
+  /*
 	collectPanels() {
 		const panelRegistered = (state, event) => {
 			log('Panel registered:', state, event);
@@ -86,97 +94,173 @@ export class HomeAssistant {
 		panelsColl.subscribe((panels) => console.log('Panel update:', panels));
 	}
 */
-    subscribeEvent(callback: (event: any) => void, event_type: string) {
-        return this.connection!.subscribeEvents((event: any) => callback(event));
+  subscribeEvent(callback: (event: any) => void, event_type: string) {
+    return this.connection!.subscribeEvents((event: any) => callback(event));
+  }
+
+  subscribeMqtt(callback: (topic: string, event: any) => void, topic = "#") {
+    return this.connection!.subscribeMessage((event: any) => callback(topic, event), {
+      type: "subscribe_trigger",
+      trigger: {
+        platform: "mqtt",
+        topic,
+        // payload: "on",
+        // encoding: "utf-8",
+      },
+    });
+  }
+
+  subscribeWebhook(callback: (webhook_id: string, event: any) => void, webhook_id: string, local_only = true) {
+    if (webhook_id === undefined) {
+      return Promise.reject(new Error("Webhook id required"));
     }
 
-    subscribeMqtt(callback: (topic: string, event: any) => void, topic = '#') {
-        return this.connection!.subscribeMessage((event: any) => callback(topic, event), {
-            type: 'subscribe_trigger',
-            trigger: {
-                platform: 'mqtt',
-                topic,
-                // payload: "on",
-                // encoding: "utf-8",
-            },
-        });
+    return this.connection!.subscribeMessage((event: any) => callback(webhook_id, event), {
+      type: "subscribe_trigger",
+      trigger: {
+        platform: "webhook",
+        allowed_methods: "POST",
+        webhook_id,
+        local_only,
+      },
+    });
+  }
+
+  async connect() {
+    try {
+      const auth = createLongLivedTokenAuth(this.url, this.token);
+
+      const connection = await createConnection({ auth });
+      this.connection = connection;
+
+      connection.addEventListener("ready", () => this.onConnectionReady());
+      connection.addEventListener("disconnected", () => this.onConnectionDisconnected());
+      connection.addEventListener("reconnect-error", () => this.onConnectionReconnectError());
+
+      subscribeServices(connection, (services: any) => this.onServicesUpdated(services));
+      subscribeEntities(connection, (entities: any) => this.onEntitiesUpdated(entities));
+
+      // this.subscribeEvent((event) => log('Event:', event));
+      // this.subscribeMqtt((...triggered) => log('MQTT:', ...triggered)).catch((e) => error(e));
+      // this.subscribeWebhook((...triggered) => log('Webhook:', ...triggered), 'test').catch((e) => error(e));
+      // this.collectPanels();
+
+      let result;
+      // TODO: remove this (this is just a test)
+
+      // works
+      //   result = await connection.sendMessagePromise({
+      //       type: 'call_service',
+      //       domain: 'switch',
+      //       service: 'toggle',
+      //       // Optional
+      //       target: {
+      //           entity_id: 'switch.s31_id3_relay',
+      //       },
+      //   });
+      //   console.log(result);
+
+      // works
+      //   result = await connection.sendMessagePromise({
+      //     type: "call_service",
+      //     domain: "climate",
+      //     service: "turn_off",
+      //     // Optional
+      //     target: {
+      //       entity_id: "climate.heatpump_garage_heat_pump_garage",
+      //     },
+      //   });
+
+      // works
+      //   result = await connection.sendMessagePromise({
+      //     type: "call_service",
+      //     domain: "climate",
+      //     service: "set_hvac_mode",
+      //     service_data: {
+      //       hvac_mode: "cool",
+
+      //     },
+      //     // Optional
+      //     target: {
+      //       entity_id: "climate.heatpump_garage_heat_pump_garage",
+      //     },
+      //   });
+
+      result = await connection.sendMessagePromise({
+        type: "call_service",
+        domain: "climate",
+        service: "set_temperature",
+        service_data: {
+          temperature: 72,
+        },
+        // Optional
+        target: {
+          entity_id: "climate.heatpump_garage_heat_pump_garage",
+        },
+      });
+
+      // DOCUMENTATION:
+
+      /**
+       * Root node in services.json is a domain "climate"
+       * {
+       *   "climate": {
+       *     "turn_on": {
+       *       name //
+       *       description
+       *         "fields": {
+       *             // this is for "Service_data"
+       *            "hvac_mode": {
+       *               "selector": {
+       *                   "number": { // data type
+       *                       "min"   // validation
+       *                   }
+       *               }
+       *             }
+       *         }
+       *      }
+       *      // turn_off
+       *   }
+       * 
+       *   for some things like "set_swing_mode" the possible values are in entities.json "swing_modes"
+       *   -- map from "fields" child props to "attributes"
+       * }
+       *
+       * Root node in entities.json is an entity "climate.heatpump_office_heat_pump_office"
+       *
+       */
+
+      console.log(result);
+
+      return this.onConnectionReady();
+    } catch (e) {
+      this.logger.error(`Error connecting to Home Assistant WebSocket backend`);
+      this.logger.error(e);
+      return Promise.reject(e);
     }
+  }
 
-    subscribeWebhook(callback: (webhook_id: string, event: any) => void, webhook_id: string, local_only = true) {
-        if (webhook_id === undefined) {
-            return Promise.reject(new Error('Webhook id required'));
-        }
+  connected() {
+    return this.connection && this.connection.connected;
+  }
 
-        return this.connection!.subscribeMessage((event: any) => callback(webhook_id, event), {
-            type: 'subscribe_trigger',
-            trigger: {
-                platform: 'webhook',
-                allowed_methods: 'POST',
-                webhook_id,
-                local_only,
-            },
-        });
-    }
+  getCurrentUser() {
+    return getUser(this.connection!);
+  }
 
-    async connect() {
-        try {
-            const auth = createLongLivedTokenAuth(this.url, this.token);
+  callService(domain: string, service: string, data?: any, target?: any) {
+    return callService(this.connection!, domain, service, data, target).catch((e: any) => {
+      this.logger.error("Service error: ", e);
+      return Promise.reject(e);
+    });
+  }
 
-            const connection = await createConnection({ auth });
-            this.connection = connection;
+  stop() {
+    return Promise.resolve(this.connection?.close());
+  }
 
-            connection.addEventListener('ready', () => this.onConnectionReady());
-            connection.addEventListener('disconnected', () => this.onConnectionDisconnected());
-            connection.addEventListener('reconnect-error', () => this.onConnectionReconnectError());
-
-            subscribeServices(connection, (services: any) => this.onServicesUpdated(services));
-            subscribeEntities(connection, (entities: any) => this.onEntitiesUpdated(entities));
-
-            // this.subscribeEvent((event) => log('Event:', event));
-            // this.subscribeMqtt((...triggered) => log('MQTT:', ...triggered)).catch((e) => error(e));
-            // this.subscribeWebhook((...triggered) => log('Webhook:', ...triggered), 'test').catch((e) => error(e));
-            // this.collectPanels();
-
-            const result = await connection.sendMessagePromise({
-                type: 'call_service',
-                domain: 'switch',
-                service: 'toggle',
-                // Optional
-                target: {
-                    entity_id: 'switch.s31_id3_relay',
-                },
-            });
-            console.log(result);
-
-            return this.onConnectionReady();
-        } catch (e) {
-            this.logger.error(`Error connecting to Home Assistant WebSocket backend`);
-            this.logger.error(e);
-            return Promise.reject(e);
-        }
-    }
-
-    connected() {
-        return this.connection && this.connection.connected;
-    }
-
-    getCurrentUser() {
-        return getUser(this.connection!);
-    }
-
-    callService(domain: string, service: string, data?: any, target?: any) {
-        return callService(this.connection!, domain, service, data, target).catch((e: any) => {
-            this.logger.error('Service error: ', e);
-            return Promise.reject(e);
-        });
-    }
-
-    stop() {
-        return Promise.resolve(this.connection?.close());
-    }
-
-    on(event: string, handler: any) {
-        if (!this.handlers[event]) this.handlers[event] = [];
-        this.handlers[event].push(handler);
-    }
+  on(event: string, handler: any) {
+    if (!this.handlers[event]) this.handlers[event] = [];
+    this.handlers[event].push(handler);
+  }
 }
