@@ -13,7 +13,9 @@
         "typecheck": "tsc --noEmit",
         "test": "vitest run",
         "test:watch": "vitest",
-        "test:integration": "vitest run src/test/*.integration.test.ts"
+        "test:integration": "vitest run src/test/*.integration.test.ts",
+        "generate": "ts-node src/type-generator/index.ts",
+        "generate:dry-run": "ts-node src/type-generator/index.ts --dry-run"
     },
     "ts-node": {
         "files": true

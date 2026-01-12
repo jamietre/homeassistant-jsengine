@@ -266,6 +266,130 @@ src/type-generator/
                         └──────────────────┘
 ```
 
+### 5.4 Change Detection & Incremental Regeneration
+
+Only regenerate types when the schema actually changes, not on every run.
+
+#### Manifest File
+
+```typescript
+// generated/.manifest.json
+{
+  "generatedAt": "2024-01-12T17:14:18.000Z",
+  "generatorVersion": "1.0.0",
+  "domains": {
+    "light": {
+      "servicesHash": "sha256:abc123...",
+      "schemaHash": "sha256:def456...",
+      "entityCount": 15
+    },
+    "climate": {
+      "servicesHash": "sha256:ghi789...",
+      "schemaHash": "sha256:jkl012...",
+      "entityCount": 3
+    }
+  }
+}
+```
+
+#### Schema Extraction
+
+For entities, we only care about the *shape* (attribute keys), not values:
+
+```typescript
+// src/type-generator/schema-extractor.ts
+function extractDomainSchema(entities: Record<string, HaEntity>): Record<string, DomainSchema> {
+  const schemas: Record<string, DomainSchema> = {};
+
+  for (const [id, entity] of Object.entries(entities)) {
+    const domain = id.split('.')[0];
+    schemas[domain] ??= { attributes: new Set(), states: new Set() };
+
+    // Collect attribute keys (not values)
+    for (const key of Object.keys(entity.attributes || {})) {
+      schemas[domain].attributes.add(key);
+    }
+
+    // Collect possible states
+    if (entity.state) {
+      schemas[domain].states.add(entity.state);
+    }
+  }
+
+  return schemas;
+}
+
+function hashSchema(schema: DomainSchema): string {
+  const normalized = {
+    attributes: [...schema.attributes].sort(),
+    states: [...schema.states].sort()
+  };
+  return createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+}
+```
+
+#### Change Detection Flow
+
+```typescript
+// src/type-generator/change-detector.ts
+interface ChangeResult {
+  domainsToRegenerate: string[];
+  newManifest: Manifest;
+}
+
+function detectChanges(
+  services: ServicesJson,
+  entities: EntitiesJson,
+  existingManifest: Manifest | null
+): ChangeResult {
+  const domainsToRegenerate: string[] = [];
+  const newManifest: Manifest = { domains: {}, generatedAt: new Date().toISOString() };
+
+  const schemas = extractDomainSchema(entities);
+
+  for (const domain of Object.keys(services)) {
+    const servicesHash = hashObject(services[domain]);
+    const schemaHash = schemas[domain] ? hashSchema(schemas[domain]) : null;
+    const entityCount = countEntitiesInDomain(entities, domain);
+
+    const existing = existingManifest?.domains[domain];
+
+    // Check if regeneration needed
+    if (!existing ||
+        existing.servicesHash !== servicesHash ||
+        existing.schemaHash !== schemaHash) {
+      domainsToRegenerate.push(domain);
+    }
+
+    newManifest.domains[domain] = { servicesHash, schemaHash, entityCount };
+  }
+
+  return { domainsToRegenerate, newManifest };
+}
+```
+
+#### CLI Integration
+
+```bash
+# Normal run - only regenerates changed domains
+npx ha-codegen --services ./services.json --entities ./entities.json
+
+# Force full regeneration
+npx ha-codegen --services ./services.json --entities ./entities.json --force
+
+# Check what would change without regenerating
+npx ha-codegen --services ./services.json --entities ./entities.json --dry-run
+```
+
+#### Benefits
+
+| Aspect | Description |
+|--------|-------------|
+| **Speed** | Skip unchanged domains |
+| **Git-friendly** | Fewer file changes per commit |
+| **CI/CD** | Fast no-op when nothing changed |
+| **Debugging** | `--dry-run` shows what would change |
+
 ---
 
 ## Phase 6: Watch Mode / Package Distribution
@@ -319,7 +443,10 @@ Publish generated types as `@yourorg/ha-types`:
 - `src/type-generator/entity-generator.ts`
 - `src/type-generator/instance-generator.ts`
 - `src/type-generator/selector-mapper.ts`
+- `src/type-generator/schema-extractor.ts` - Extract domain schemas from entities
+- `src/type-generator/change-detector.ts` - Detect changes, manage manifest
 - `generated/types/` - Output directory
+- `generated/.manifest.json` - Change detection manifest
 
 ### Modify
 - `src/types/ha-types.ts` - Expand with base types or import generated
