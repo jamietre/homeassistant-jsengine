@@ -1,4 +1,6 @@
 hass-token.env
 node_modules
 scripts/**
-/dist
+dist/
+generated/
+
