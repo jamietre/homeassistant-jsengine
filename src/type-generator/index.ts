@@ -201,6 +201,43 @@ async function main(): Promise<void> {
 
         console.log('');
         console.log(`Generated entity types for ${generatedEntityDomains.length} domains`);
+
+        // Generate Phase 2: Entity instance types
+        console.log('');
+        console.log('Generating entity instance types...');
+
+        // Group entities by domain
+        const domainMap = new Map<string, string[]>();
+        for (const entityId of Object.keys(entitiesJson)) {
+            const domain = entityId.split('.')[0];
+            if (!domainMap.has(domain)) {
+                domainMap.set(domain, []);
+            }
+            domainMap.get(domain)!.push(entityId);
+        }
+
+        // Sort entity IDs within each domain
+        for (const entityIds of domainMap.values()) {
+            entityIds.sort();
+        }
+
+        // Generate my-entities.ts (MyEntities interface)
+        const myEntitiesCode = generateMyEntitiesInterface(domainMap);
+        const myEntitiesPath = path.join(options.outputDir, 'my-entities.ts');
+        writeFile(myEntitiesPath, myEntitiesCode, options.dryRun);
+
+        // Generate entity-ids.ts (EntityId union types per domain)
+        const entityIdsCode = generateEntityIdsFile(domainMap);
+        const entityIdsPath = path.join(options.outputDir, 'entity-ids.ts');
+        writeFile(entityIdsPath, entityIdsCode, options.dryRun);
+
+        // Generate entity-helpers.ts (helper functions)
+        const entityHelpersCode = generateEntityHelpers();
+        const entityHelpersPath = path.join(options.outputDir, 'entity-helpers.ts');
+        writeFile(entityHelpersPath, entityHelpersCode, options.dryRun);
+
+        const totalEntities = Array.from(domainMap.values()).reduce((sum, ids) => sum + ids.length, 0);
+        console.log(`Generated instance types for ${totalEntities} entities`);
     }
 
     console.log('');

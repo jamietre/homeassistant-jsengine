@@ -7,9 +7,7 @@
  */
 
 import { EntitiesJson } from './entity-generator';
-import { toPascalCase } from './entity-generator';
 
-// Re-export toPascalCase for use in this module
 function getDomain(entityId: string): string {
     return entityId.split('.')[0];
 }
