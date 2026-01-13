@@ -47,6 +47,50 @@ interface GeneratedParam {
     required: boolean;
     description?: string;
     jsDoc?: string;
+    isGeneric?: boolean;      // If true, this param uses a generic type
+    genericTypeName?: string; // The generic type parameter name (e.g., 'TFanMode')
+}
+
+/**
+ * Fields that should be generic type parameters (entity-specific enums).
+ * These are text selectors that typically have different valid values per entity.
+ */
+const GENERIC_FIELD_PATTERNS = new Set([
+    'hvac_mode',
+    'fan_mode',
+    'swing_mode',
+    'swing_horizontal_mode',
+    'swing_vertical_mode',
+    'preset_mode',
+    'operation_mode',
+    'sound_mode',
+    'effect',
+    'source',
+    'option',     // for input_select, select
+]);
+
+/**
+ * Determines if a field should use a generic type parameter.
+ */
+function shouldBeGeneric(fieldName: string, tsType: string): boolean {
+    // Only make string fields generic
+    if (tsType !== 'string') return false;
+
+    // Check exact matches
+    if (GENERIC_FIELD_PATTERNS.has(fieldName)) return true;
+
+    // Check if field name ends with _mode (covers custom modes)
+    if (fieldName.endsWith('_mode')) return true;
+
+    return false;
+}
+
+/**
+ * Converts a field name to a generic type parameter name.
+ * Example: 'hvac_mode' -> 'THvacMode'
+ */
+function getGenericTypeName(fieldName: string): string {
+    return 'T' + toPascalCase(fieldName);
 }
 
 /**
@@ -82,13 +126,16 @@ function generateParamsInterface(
 
     for (const [fieldName, field] of Object.entries(flatFields)) {
         const typeMapping = selectorToType(field.selector);
+        const isGeneric = shouldBeGeneric(fieldName, typeMapping.tsType);
 
         params.push({
             name: fieldName,
-            tsType: typeMapping.tsType,
+            tsType: isGeneric ? getGenericTypeName(fieldName) : typeMapping.tsType,
             required: field.required ?? false,
             description: field.description || field.name,
             jsDoc: typeMapping.jsDoc,
+            isGeneric,
+            genericTypeName: isGeneric ? getGenericTypeName(fieldName) : undefined,
         });
     }
 
@@ -98,8 +145,15 @@ function generateParamsInterface(
 
     const interfaceName = `${toPascalCase(domain)}${toPascalCase(serviceName)}Params`;
 
+    // Collect generic type parameters for this interface
+    const genericParams = params
+        .filter(p => p.isGeneric)
+        .map(p => `${p.genericTypeName} = string`)
+        .filter((v, i, a) => a.indexOf(v) === i); // Deduplicate
+
     const lines: string[] = [];
-    lines.push(`export interface ${interfaceName} {`);
+    const genericsDecl = genericParams.length > 0 ? `<${genericParams.join(', ')}>` : '';
+    lines.push(`export interface ${interfaceName}${genericsDecl} {`);
 
     for (const param of params) {
         // Add JSDoc comment
@@ -130,12 +184,28 @@ function generateParamsInterface(
 function generateServicesInterface(
     domain: string,
     services: DomainServices,
-    paramsInterfaces: Map<string, string>
+    paramsInterfaces: Map<string, string>,
+    allParams: Map<string, GeneratedParam[]>
 ): string {
     const interfaceName = `${toPascalCase(domain)}Services`;
-    const lines: string[] = [];
 
-    lines.push(`export interface ${interfaceName} {`);
+    // Collect all unique generic type parameters across all services
+    const genericTypeSet = new Set<string>();
+    for (const params of allParams.values()) {
+        for (const param of params) {
+            if (param.isGeneric && param.genericTypeName) {
+                genericTypeSet.add(param.genericTypeName);
+            }
+        }
+    }
+
+    const genericTypes = Array.from(genericTypeSet).sort();
+    const genericsDecl = genericTypes.length > 0
+        ? `<${genericTypes.map(g => `${g} = string`).join(', ')}>`
+        : '';
+
+    const lines: string[] = [];
+    lines.push(`export interface ${interfaceName}${genericsDecl} {`);
 
     for (const [serviceName, service] of Object.entries(services)) {
         const methodName = serviceName; // Keep snake_case for method names to match HA
@@ -147,7 +217,23 @@ function generateServicesInterface(
 
         // Determine parameter type
         const paramsInterfaceName = paramsInterfaces.get(serviceName);
-        const paramType = paramsInterfaceName ? `params?: ${paramsInterfaceName}` : '';
+        let paramType = '';
+
+        if (paramsInterfaceName) {
+            // Check if this service has generic parameters
+            const params = allParams.get(serviceName);
+            const serviceGenerics = params
+                ?.filter(p => p.isGeneric && p.genericTypeName)
+                .map(p => p.genericTypeName)
+                .filter((v, i, a) => a.indexOf(v) === i) // Deduplicate
+                ?? [];
+
+            const genericsForParams = serviceGenerics.length > 0
+                ? `<${serviceGenerics.join(', ')}>`
+                : '';
+
+            paramType = `params?: ${paramsInterfaceName}${genericsForParams}`;
+        }
 
         lines.push(`    ${methodName}(${paramType}): Promise<void>;`);
     }
@@ -163,6 +249,7 @@ function generateServicesInterface(
 export function generateDomainServices(domain: string, services: DomainServices): string {
     const sections: string[] = [];
     const paramsInterfaces = new Map<string, string>();
+    const allParams = new Map<string, GeneratedParam[]>();
 
     // Header
     sections.push(`/**`);
@@ -179,12 +266,13 @@ export function generateDomainServices(domain: string, services: DomainServices)
                 sections.push(result.code);
                 sections.push('');
                 paramsInterfaces.set(serviceName, result.interfaceName);
+                allParams.set(serviceName, result.params);
             }
         }
     }
 
     // Generate the services interface
-    const servicesInterface = generateServicesInterface(domain, services, paramsInterfaces);
+    const servicesInterface = generateServicesInterface(domain, services, paramsInterfaces, allParams);
     sections.push(servicesInterface);
 
     return sections.join('\n');

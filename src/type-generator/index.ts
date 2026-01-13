@@ -18,6 +18,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { generateDomainServices, generateServicesIndex, ServicesJson } from './service-generator';
+import { analyzeDomain, generateDomainEntityTypes, generateEntitiesIndex, EntitiesJson } from './entity-generator';
 
 interface CliOptions {
     servicesPath: string;
@@ -138,13 +139,67 @@ async function main(): Promise<void> {
         generatedDomains.push(domain);
     }
 
-    // Generate index file
-    const indexCode = generateServicesIndex(generatedDomains);
-    const indexPath = path.join(servicesDir, 'index.ts');
-    writeFile(indexPath, indexCode, options.dryRun);
+    // Generate services index file
+    const servicesIndexCode = generateServicesIndex(generatedDomains);
+    const servicesIndexPath = path.join(servicesDir, 'index.ts');
+    writeFile(servicesIndexPath, servicesIndexCode, options.dryRun);
+
+    console.log(`Generated service types for ${generatedDomains.length} domains`);
+    console.log('');
+
+    // Read entities.json
+    if (!fs.existsSync(options.entitiesPath)) {
+        console.warn(`Warning: Entities file not found: ${options.entitiesPath}`);
+        console.warn('Skipping entity type generation.');
+    } else {
+        const entitiesJson: EntitiesJson = JSON.parse(fs.readFileSync(options.entitiesPath, 'utf-8'));
+        const entityCount = Object.keys(entitiesJson).length;
+        console.log(`Loaded ${entityCount} entities from entities.json`);
+
+        // Create entities output directory
+        const entitiesDir = path.join(options.outputDir, 'entities');
+        if (!options.dryRun) {
+            ensureDir(entitiesDir);
+        }
+
+        // Get unique domains from entities
+        const allEntities = Object.values(entitiesJson);
+        const entityDomains = new Set(allEntities.map(e => e.entity_id.split('.')[0]));
+        const generatedEntityDomains: string[] = [];
+
+        for (const domain of entityDomains) {
+            const analysis = analyzeDomain(entitiesJson, domain);
+            if (analysis.entityCount === 0) continue;
+
+            const code = generateDomainEntityTypes(analysis);
+            const filePath = path.join(entitiesDir, `${domain}.ts`);
+
+            writeFile(filePath, code, options.dryRun);
+            generatedEntityDomains.push(domain);
+
+            // Log profile info for domains with multiple profiles
+            if (analysis.profiles.length > 1) {
+                console.log(`  ${domain}: ${analysis.profiles.length} distinct entity profiles`);
+            }
+
+            // Log enum types found
+            if (analysis.enumTypes.size > 0) {
+                const enumNames = Array.from(analysis.enumTypes.keys()).join(', ');
+                console.log(`  ${domain}: enums extracted for ${enumNames}`);
+            }
+        }
+
+        // Generate entities index file
+        const entitiesIndexCode = generateEntitiesIndex(generatedEntityDomains);
+        const entitiesIndexPath = path.join(entitiesDir, 'index.ts');
+        writeFile(entitiesIndexPath, entitiesIndexCode, options.dryRun);
+
+        console.log('');
+        console.log(`Generated entity types for ${generatedEntityDomains.length} domains`);
+    }
 
     console.log('');
-    console.log(`Generated types for ${generatedDomains.length} domains`);
+    console.log('Type generation complete!');
 }
 
 main().catch((err) => {
