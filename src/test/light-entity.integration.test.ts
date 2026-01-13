@@ -1,16 +1,42 @@
+/**
+ * Integration test for typed Light entities using GENERATED types.
+ *
+ * This test demonstrates the complete type generation system working end-to-end:
+ * - Uses LightEntity from generated/types/entities/light.ts
+ * - Uses LightServices from generated/types/services/light.ts
+ * - Uses MyEntities interface mapping all 440 entities
+ * - Tests against real Home Assistant instance via WebSocket
+ * - Verifies type-safe service calls (turn_on, turn_off, toggle)
+ *
+ * Prerequisites:
+ * - HASS_TOKEN environment variable must be set
+ * - Home Assistant must be running and accessible
+ * - light.s31_id1_switch (Couch Lamp) entity must exist
+ */
+
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { HomeAssistant } from '../engine/home-assistant';
 import { Entity } from '../engine/entity';
 import { EventBus } from '../util/event-bus';
 import { getLogger } from '../logger/logger';
-import { LightState, LightAttributes, LightServices, ProxiedLightEntity } from '../types/domains/light';
 import { HaEventMap } from '../types/jsmodule';
-import { asTypedEntity, waitForState } from '../engine/typed-entity';
+import { waitForState } from '../engine/typed-entity';
+
+// Import GENERATED types (from Phase 1-5 type generation system)
+import type { MyEntities, AllEntityIds } from '../../generated/types/my-entities';
+import type { LightEntity, LightState } from '../../generated/types/entities/light';
+import type { LightServices } from '../../generated/types/services/light';
 
 const COUCH_LAMP_ID = 'light.s31_id1_switch';
 const HA_URL = process.env.HASS_URL || 'http://172.16.2.210:8123';
 
-describe('Typed Light Entity Integration', () => {
+/**
+ * Helper function to add delay between state changes.
+ * Gives Home Assistant time to process state transitions.
+ */
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+describe('Typed Light Entity Integration (Using Generated Types)', () => {
     let ha: HomeAssistant;
     let services: Record<string, any> = {};
     let entities: Record<string, Entity> = {};
@@ -169,12 +195,18 @@ describe('Typed Light Entity Integration', () => {
         couchLampTopic = new EventBus<HaEventMap>();
     });
 
-    it('should get the Couch Lamp entity with typed state', () => {
+    // Add delay after each test to prevent rapid light flashing
+    afterEach(async () => {
+        logger.info('Waiting 1 second between tests...');
+        await delay(1000);
+    });
+
+    it('should get the Couch Lamp entity with typed state (using generated types)', () => {
         const rawEntity = entities[COUCH_LAMP_ID];
         expect(rawEntity).toBeDefined();
 
-        // Cast to typed entity
-        const couchLamp = asTypedEntity<LightState, LightAttributes, LightServices>(rawEntity);
+        // Cast to generated LightEntity type
+        const couchLamp = rawEntity as unknown as LightEntity;
 
         // Type assertions - these would fail at compile time if types are wrong
         expect(couchLamp.entity_id).toBe(COUCH_LAMP_ID);
@@ -187,9 +219,9 @@ describe('Typed Light Entity Integration', () => {
         logger.info(`Couch Lamp attributes: ${JSON.stringify(couchLamp.attributes)}`);
     });
 
-    it('should have typed service methods on the proxied entity', () => {
+    it('should have typed service methods on the proxied entity (using generated types)', () => {
         const rawEntity = entities[COUCH_LAMP_ID];
-        const couchLamp = asTypedEntity<LightState, LightAttributes, LightServices>(rawEntity);
+        const couchLamp = rawEntity as unknown as LightEntity;
 
         // These methods should exist via proxiedServices
         expect(typeof couchLamp.turn_on).toBe('function');
@@ -197,9 +229,9 @@ describe('Typed Light Entity Integration', () => {
         expect(typeof couchLamp.toggle).toBe('function');
     });
 
-    it('should toggle the Couch Lamp and verify state changes', async () => {
+    it('should toggle the Couch Lamp and verify state changes (using generated types)', async () => {
         const rawEntity = entities[COUCH_LAMP_ID];
-        const couchLamp = asTypedEntity<LightState, LightAttributes, LightServices>(rawEntity);
+        const couchLamp = rawEntity as unknown as LightEntity;
 
         // Record original state
         const originalState = couchLamp.state as 'on' | 'off';
@@ -213,7 +245,7 @@ describe('Typed Light Entity Integration', () => {
         // Set up the state change listener BEFORE triggering the action
         const stateChangePromise = waitForState(couchLampTopic, expectedStateAfterToggle, 10000);
 
-        // Toggle the light
+        // Toggle the light (using generated service method)
         await couchLamp.toggle();
         logger.info('Toggle command sent');
 
@@ -228,6 +260,10 @@ describe('Typed Light Entity Integration', () => {
         // Verify entity state is updated
         expect(couchLamp.state).toBe(expectedStateAfterToggle);
 
+        // Add delay before toggling back
+        await delay(1000);
+        logger.info('Waiting 1 second before toggling back...');
+
         // Toggle back to original state
         logger.info(`Toggling back to: ${originalState}`);
 
@@ -239,9 +275,9 @@ describe('Typed Light Entity Integration', () => {
         logger.info(`Restored to original state: ${couchLamp.state}`);
     }, 25000); // 25s timeout for this test
 
-    it('should call turn_on with typed parameters', async () => {
+    it('should call turn_on with typed parameters (using generated types)', async () => {
         const rawEntity = entities[COUCH_LAMP_ID];
-        const couchLamp = asTypedEntity<LightState, LightAttributes, LightServices>(rawEntity);
+        const couchLamp = rawEntity as unknown as LightEntity;
 
         // If already on, turn off first
         if (couchLamp.state === 'on') {
@@ -249,12 +285,14 @@ describe('Typed Light Entity Integration', () => {
             const offPromise = waitForState(couchLampTopic, 'off', 10000);
             await couchLamp.turn_off();
             await offPromise;
+            await delay(1000);
+            logger.info('Waiting 1 second after turning off...');
         }
 
         // Now turn on with typed params (empty for onoff-only light)
         logger.info('Calling turn_on()');
         const onPromise = waitForState(couchLampTopic, 'on', 10000);
-        await couchLamp.turn_on({}); // TypeScript validates the params shape
+        await couchLamp.turn_on({}); // TypeScript validates the params shape using generated types
         const event = await onPromise;
 
         expect(event.state).toBe('on');
@@ -262,9 +300,9 @@ describe('Typed Light Entity Integration', () => {
         logger.info('turn_on() succeeded');
     }, 25000);
 
-    it('should call turn_off with typed parameters', async () => {
+    it('should call turn_off with typed parameters (using generated types)', async () => {
         const rawEntity = entities[COUCH_LAMP_ID];
-        const couchLamp = asTypedEntity<LightState, LightAttributes, LightServices>(rawEntity);
+        const couchLamp = rawEntity as unknown as LightEntity;
 
         // Ensure light is on first
         if (couchLamp.state === 'off') {
@@ -272,12 +310,14 @@ describe('Typed Light Entity Integration', () => {
             const onPromise = waitForState(couchLampTopic, 'on', 10000);
             await couchLamp.turn_on();
             await onPromise;
+            await delay(1000);
+            logger.info('Waiting 1 second after turning on...');
         }
 
         // Turn off with typed params
         logger.info('Calling turn_off()');
         const offPromise = waitForState(couchLampTopic, 'off', 10000);
-        await couchLamp.turn_off({}); // Could also pass { transition: 1 } etc.
+        await couchLamp.turn_off({}); // Could also pass { transition: 1 } etc. - validated by generated types
         const event = await offPromise;
 
         expect(event.state).toBe('off');

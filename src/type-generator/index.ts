@@ -20,6 +20,14 @@ import * as path from 'path';
 import { generateDomainServices, generateServicesIndex, ServicesJson } from './service-generator';
 import { analyzeDomain, generateDomainEntityTypes, generateEntitiesIndex, EntitiesJson } from './entity-generator';
 import { generateMyEntitiesInterface, generateEntityIdsFile, generateEntityHelpers } from './instance-generator';
+import {
+    loadManifest,
+    saveManifest,
+    createManifest,
+    detectChanges,
+    printChanges,
+    getDomainsToRegenerate,
+} from './manifest';
 
 interface CliOptions {
     servicesPath: string;
@@ -120,18 +128,53 @@ async function main(): Promise<void> {
     const servicesJson: ServicesJson = JSON.parse(fs.readFileSync(options.servicesPath, 'utf-8'));
     console.log(`Loaded ${Object.keys(servicesJson).length} domains from services.json`);
 
+    // Read entities.json early for manifest creation
+    let entitiesJson: EntitiesJson | null = null;
+    if (fs.existsSync(options.entitiesPath)) {
+        entitiesJson = JSON.parse(fs.readFileSync(options.entitiesPath, 'utf-8'));
+    }
+
+    // Load existing manifest and detect changes
+    const manifestPath = path.join(options.outputDir, '.typegen-manifest.json');
+    const oldManifest = options.force ? null : loadManifest(manifestPath);
+    const newManifest = createManifest(servicesJson, entitiesJson || {});
+    const changes = detectChanges(oldManifest, newManifest);
+
+    if (!options.force) {
+        printChanges(changes);
+        console.log('');
+
+        if (!changes.needsRegeneration) {
+            console.log('Skipping regeneration - use --force to regenerate anyway');
+            return;
+        }
+    }
+
+    // Determine which domains need regeneration
+    const allServiceDomains = Object.keys(servicesJson);
+    const allEntityDomains = entitiesJson ? Array.from(new Set(Object.keys(entitiesJson).map(id => id.split('.')[0]))) : [];
+
+    const { serviceDomains: domainsToRegenerateServices, entityDomains: domainsToRegenerateEntities } =
+        options.force ? { serviceDomains: allServiceDomains, entityDomains: allEntityDomains } : getDomainsToRegenerate(changes, allServiceDomains);
+
     // Create output directory structure
     const servicesDir = path.join(options.outputDir, 'services');
     if (!options.dryRun) {
         ensureDir(servicesDir);
     }
 
-    // Generate service types for each domain
+    // Generate service types for each domain (only changed domains if incremental)
     const generatedDomains: string[] = [];
 
     for (const [domain, services] of Object.entries(servicesJson)) {
         const serviceCount = Object.keys(services).length;
         if (serviceCount === 0) continue;
+
+        // Skip if not in domains to regenerate (unless force)
+        if (!options.force && !domainsToRegenerateServices.includes(domain)) {
+            generatedDomains.push(domain); // Still track it for index
+            continue;
+        }
 
         const code = generateDomainServices(domain, services);
         const filePath = path.join(servicesDir, `${domain}.ts`);
@@ -148,14 +191,15 @@ async function main(): Promise<void> {
     console.log(`Generated service types for ${generatedDomains.length} domains`);
     console.log('');
 
-    // Read entities.json
-    if (!fs.existsSync(options.entitiesPath)) {
+    // Generate entity types (only if entities.json exists)
+    if (!entitiesJson) {
         console.warn(`Warning: Entities file not found: ${options.entitiesPath}`);
         console.warn('Skipping entity type generation.');
     } else {
-        const entitiesJson: EntitiesJson = JSON.parse(fs.readFileSync(options.entitiesPath, 'utf-8'));
         const entityCount = Object.keys(entitiesJson).length;
-        console.log(`Loaded ${entityCount} entities from entities.json`);
+        if (oldManifest) {
+            console.log(`Loaded ${entityCount} entities from entities.json`);
+        }
 
         // Create entities output directory
         const entitiesDir = path.join(options.outputDir, 'entities');
@@ -174,6 +218,12 @@ async function main(): Promise<void> {
         for (const domain of entityDomains) {
             const analysis = analyzeDomain(entitiesJson, domain);
             if (analysis.entityCount === 0) continue;
+
+            // Skip if not in domains to regenerate (unless force)
+            if (!options.force && !domainsToRegenerateEntities.includes(domain)) {
+                generatedEntityDomains.push(domain); // Still track it for index
+                continue;
+            }
 
             const hasServices = domainsWithServices.has(domain);
             const code = generateDomainEntityTypes(analysis, hasServices);
@@ -202,42 +252,54 @@ async function main(): Promise<void> {
         console.log('');
         console.log(`Generated entity types for ${generatedEntityDomains.length} domains`);
 
-        // Generate Phase 2: Entity instance types
-        console.log('');
-        console.log('Generating entity instance types...');
+        // Generate Phase 2: Entity instance types (only if entities changed)
+        if (options.force || changes.needsInstanceRegeneration) {
+            console.log('');
+            console.log('Generating entity instance types...');
 
-        // Group entities by domain
-        const domainMap = new Map<string, string[]>();
-        for (const entityId of Object.keys(entitiesJson)) {
-            const domain = entityId.split('.')[0];
-            if (!domainMap.has(domain)) {
-                domainMap.set(domain, []);
+            // Group entities by domain
+            const domainMap = new Map<string, string[]>();
+            for (const entityId of Object.keys(entitiesJson)) {
+                const domain = entityId.split('.')[0];
+                if (!domainMap.has(domain)) {
+                    domainMap.set(domain, []);
+                }
+                domainMap.get(domain)!.push(entityId);
             }
-            domainMap.get(domain)!.push(entityId);
+
+            // Sort entity IDs within each domain
+            for (const entityIds of domainMap.values()) {
+                entityIds.sort();
+            }
+
+            // Generate my-entities.ts (MyEntities interface)
+            const myEntitiesCode = generateMyEntitiesInterface(domainMap);
+            const myEntitiesPath = path.join(options.outputDir, 'my-entities.ts');
+            writeFile(myEntitiesPath, myEntitiesCode, options.dryRun);
+
+            // Generate entity-ids.ts (EntityId union types per domain)
+            const entityIdsCode = generateEntityIdsFile(domainMap);
+            const entityIdsPath = path.join(options.outputDir, 'entity-ids.ts');
+            writeFile(entityIdsPath, entityIdsCode, options.dryRun);
+
+            // Generate entity-helpers.ts (helper functions)
+            const entityHelpersCode = generateEntityHelpers();
+            const entityHelpersPath = path.join(options.outputDir, 'entity-helpers.ts');
+            writeFile(entityHelpersPath, entityHelpersCode, options.dryRun);
+
+            const totalEntities = Array.from(domainMap.values()).reduce((sum, ids) => sum + ids.length, 0);
+            console.log(`Generated instance types for ${totalEntities} entities`);
+        } else {
+            console.log('');
+            console.log('Instance types unchanged - skipping regeneration');
         }
+    }
 
-        // Sort entity IDs within each domain
-        for (const entityIds of domainMap.values()) {
-            entityIds.sort();
-        }
-
-        // Generate my-entities.ts (MyEntities interface)
-        const myEntitiesCode = generateMyEntitiesInterface(domainMap);
-        const myEntitiesPath = path.join(options.outputDir, 'my-entities.ts');
-        writeFile(myEntitiesPath, myEntitiesCode, options.dryRun);
-
-        // Generate entity-ids.ts (EntityId union types per domain)
-        const entityIdsCode = generateEntityIdsFile(domainMap);
-        const entityIdsPath = path.join(options.outputDir, 'entity-ids.ts');
-        writeFile(entityIdsPath, entityIdsCode, options.dryRun);
-
-        // Generate entity-helpers.ts (helper functions)
-        const entityHelpersCode = generateEntityHelpers();
-        const entityHelpersPath = path.join(options.outputDir, 'entity-helpers.ts');
-        writeFile(entityHelpersPath, entityHelpersCode, options.dryRun);
-
-        const totalEntities = Array.from(domainMap.values()).reduce((sum, ids) => sum + ids.length, 0);
-        console.log(`Generated instance types for ${totalEntities} entities`);
+    // Save manifest
+    if (!options.dryRun) {
+        saveManifest(manifestPath, newManifest);
+        console.log('');
+        console.log(`Manifest saved: ${manifestPath}`);
     }
 
     console.log('');
