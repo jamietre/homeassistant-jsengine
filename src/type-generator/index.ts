@@ -19,6 +19,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { generateDomainServices, generateServicesIndex, ServicesJson } from './service-generator';
 import { analyzeDomain, generateDomainEntityTypes, generateEntitiesIndex, EntitiesJson } from './entity-generator';
+import { generateMyEntitiesInterface, generateEntityIdsFile, generateEntityHelpers } from './instance-generator';
 
 interface CliOptions {
     servicesPath: string;
@@ -167,11 +168,15 @@ async function main(): Promise<void> {
         const entityDomains = new Set(allEntities.map(e => e.entity_id.split('.')[0]));
         const generatedEntityDomains: string[] = [];
 
+        // Track which domains have services for proper imports
+        const domainsWithServices = new Set(Object.keys(servicesJson));
+
         for (const domain of entityDomains) {
             const analysis = analyzeDomain(entitiesJson, domain);
             if (analysis.entityCount === 0) continue;
 
-            const code = generateDomainEntityTypes(analysis);
+            const hasServices = domainsWithServices.has(domain);
+            const code = generateDomainEntityTypes(analysis, hasServices);
             const filePath = path.join(entitiesDir, `${domain}.ts`);
 
             writeFile(filePath, code, options.dryRun);

@@ -297,7 +297,7 @@ function attributeToTsType(info: AttributeInfo, enumTypeName?: string): string {
  */
 function toPascalCase(str: string): string {
     return str
-        .split(/[_-]/)
+        .split(/[_\-\s]+/)  // Split on underscores, hyphens, AND spaces
         .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
         .join('');
 }
@@ -423,11 +423,8 @@ export function generateDomainEntityTypes(analysis: DomainAnalysis, hasServices:
     lines.push(' */');
     lines.push('');
 
-    // Import service interface if this domain has services with enum types
-    const hasServiceGenerics = hasServices && analysis.enumTypes.size > 0 &&
-        Array.from(analysis.enumTypes.keys()).some(attr => ATTRIBUTE_TO_SERVICE_GENERIC_MAP[attr]);
-
-    if (hasServiceGenerics) {
+    // Import service interface if this domain has services
+    if (hasServices) {
         lines.push(`import { ${domainPascal}Services } from '../services/${analysis.domain}';`);
         lines.push('');
     }
@@ -491,7 +488,10 @@ export function generateDomainEntityTypes(analysis: DomainAnalysis, hasServices:
             }
         }
 
-        lines.push(`    ${name}${optional}: ${tsType};`);
+        // Quote attribute names that contain spaces or special characters
+        const quotedName = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name) ? name : `'${name}'`;
+
+        lines.push(`    ${quotedName}${optional}: ${tsType};`);
     }
 
     lines.push('}');
@@ -517,7 +517,11 @@ export function generateDomainEntityTypes(analysis: DomainAnalysis, hasServices:
             for (const [name, info] of profile.attributes) {
                 const enumTypeName = enumTypeNames.get(name);
                 const tsType = attributeToTsType(info, enumTypeName ? `${enumTypeName}[]` : undefined);
-                lines.push(`    ${name}: ${tsType};`);
+
+                // Quote attribute names that contain spaces or special characters
+                const quotedName = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name) ? name : `'${name}'`;
+
+                lines.push(`    ${quotedName}: ${tsType};`);
             }
 
             lines.push('}');
@@ -526,6 +530,7 @@ export function generateDomainEntityTypes(analysis: DomainAnalysis, hasServices:
     }
 
     // Generate typed service variant if this domain has services
+    let hasTypedServices = false;
     if (hasServices && analysis.enumTypes.size > 0) {
         // Build mapping of generic param -> concrete type
         const genericTypeMap = new Map<string, string>();
@@ -556,8 +561,35 @@ export function generateDomainEntityTypes(analysis: DomainAnalysis, hasServices:
             lines.push('    ' + orderedTypes.join(',\n    '));
             lines.push('>;');
             lines.push('');
+            hasTypedServices = true;
         }
     }
+
+    // Generate complete entity interface (Phase 1.3)
+    const hasStateType = commonStates[analysis.domain];
+    const stateTypeName = hasStateType ? `${domainPascal}State` : 'string';
+    const servicesTypeName = hasTypedServices ? `Typed${domainPascal}Services` :
+                             hasServices ? `${domainPascal}Services` : null;
+
+    lines.push('/**');
+    lines.push(` * Complete entity interface for ${analysis.domain} domain.`);
+    lines.push(' * Combines state, attributes, and service methods.');
+    lines.push(' */');
+
+    if (servicesTypeName) {
+        lines.push(`export interface ${domainPascal}Entity extends ${servicesTypeName} {`);
+    } else {
+        lines.push(`export interface ${domainPascal}Entity {`);
+    }
+
+    lines.push(`    entity_id: string;`);
+    lines.push(`    domain: '${analysis.domain}';`);
+    lines.push(`    state: ${stateTypeName};`);
+    lines.push(`    attributes: ${domainPascal}Attributes;`);
+    lines.push(`    last_changed?: string;`);
+    lines.push(`    last_updated?: string;`);
+    lines.push(`    context?: { id: string; parent_id: string | null; user_id: string | null };`);
+    lines.push('}');
 
     return lines.join('\n');
 }
