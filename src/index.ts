@@ -28,7 +28,7 @@ if (require.main === module) {
     // const url = 'http://127.0.0.1:8123';
     const url = 'http://172.16.2.210:8123';
 
-    const ha = new JSEngine({ dir, token, url }, logger);
+    const ha = new JSEngine({ scriptsDir: dir, token, url }, logger);
 
     const shutdown = () => {
         ha.stop();

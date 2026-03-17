@@ -1,6 +1,7 @@
 import { Logger } from '../logger/logger';
 import { HaEntity, HaEvent } from '../types/ha-types';
-import { HaEventMap, HaEvents, JsEngine, JsModule, JsModuleConfig, TopicProvider } from '../types/jsmodule';
+import { HaEventMap, JsEngine, JsModule, JsModuleConfig, TopicProvider } from '../types/jsmodule';
+import { AnyHaEntity, EntityId } from '../types/ha-types';
 
 class TestConsumer implements JsModule {
     private logger: Logger;
@@ -14,7 +15,7 @@ class TestConsumer implements JsModule {
 
     started() {
         this.logger.debug('Started');
-        const topic = this.getTopic('sensor.s31_id2_current');
+        const topic = this.getTopic('sensor.s31_id2_current' as EntityId);
         topic.subscribe('updated', (evt) => {
             this.logger.info(`Updated: ${evt.id}`);
             this.logger.info(`entity`, evt);
@@ -24,10 +25,10 @@ class TestConsumer implements JsModule {
         regexTopic.subscribeAll(this.sensorUpdated);
     }
 
-    sensorUpdated = (evt: HaEvents) => {
+    sensorUpdated = (evt: HaEventMap[keyof HaEventMap]) => {
         this.logger.info(`${evt.id} UPDATED`);
         if (evt.entity.domain === 'light') {
-            evt.entity.toggle();
+            (evt.entity as any).toggle();
         }
     };
     stopped() {

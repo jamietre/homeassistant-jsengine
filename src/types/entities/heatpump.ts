@@ -1,1 +1,1 @@
-type HeatPump = 
+export type HeatPump = Record<string, unknown>;

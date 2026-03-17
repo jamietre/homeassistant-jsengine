@@ -1,5 +1,6 @@
 import { getLogger, Logger } from '../logger/logger';
-import RunDir from 'jsrundir';
+import { writeFileSync, mkdirSync } from 'fs';
+import path from 'path';
 import { Cache } from './cache';
 import { error } from 'console';
 import { Service } from './service';
@@ -27,9 +28,12 @@ type SystemBusEvents = {
     stopped: void;
 };
 
+type ScriptStatus = 'running' | 'stopped' | 'error' | 'disabled';
+
 export class JSEngine {
-    #dir: string | null = null;
-    #rundir: any = null;
+    #scriptsDir: string;
+    #scriptStatuses = new Map<string, ScriptStatus>();
+    #scriptLogTails = new Map<string, string[]>();
     #ha: HomeAssistant | null = null;
 
     #scripts: string[] = [];
@@ -52,14 +56,11 @@ export class JSEngine {
 
     systemTopic = this.getOrCreateTopic<SystemBusEvents>('system');
 
-    constructor(options: { dir: string; token: string | undefined; url: string }, logger: Logger) {
-        const { token, dir, url } = options;
+    constructor(options: { scriptsDir: string; token: string | undefined; url: string }, logger: Logger) {
+        const { token, scriptsDir, url } = options;
         this.#logger = logger;
-        this.#dir = dir;
-        this.#logger.info(`Loading scripts from '${this.#dir}'`);
-        this.#rundir = new RunDir(this.#dir);
-        this.#rundir.on('load', (name: string, module: any) => this.#scriptLoaded(name, module));
-        this.#rundir.on('unload', (name: string, module: any) => this.#scriptUnloaded(name, module));
+        this.#scriptsDir = scriptsDir;
+        mkdirSync(this.#scriptsDir, { recursive: true });
 
         if (token) {
             this.#ha = new HomeAssistant({ token, url }, this.#logger);
@@ -88,11 +89,9 @@ export class JSEngine {
             get started() {
                 return self.#ready;
             },
-        });
 
-        if ((globalThis as any).JSEngine === undefined) {
-            (globalThis as any).JSEngine = this.#engine;
-        }
+            entity: (id: EntityId) => self.entity(id),
+        });
     }
 
     #reset() {
@@ -364,6 +363,7 @@ export class JSEngine {
             }
         }
     }
+
     async #scriptLoaded(name: string, jsModuleExport: ModuleExport<JsModuleConstructor>): Promise<void> {
         // TO DO: wait for pending notifications if previously unloaded (is this needed?)
         this.#logger.info(`Loaded: ${name}`);
@@ -372,24 +372,31 @@ export class JSEngine {
         const module = new Cotr({
             engine: this.#engine,
             loggerFactory: getLogger,
-            getTopic: (entity: EntityId<HaEntity> | RegExp) => {
+            getTopic: (<T extends HaEntity>(entity: EntityId<T> | RegExp): EventBus<HaEventMap<T>> => {
                 if (typeof entity === 'string') {
-                    let topic = this.topics.get(entity) as unknown as EventBus<HaEventMap<HaEntity>>;
+                    let topic = this.topics.get(entity) as unknown as EventBus<HaEventMap<T>>;
                     if (!topic) {
-                        topic = new EventBus<HaEventMap<HaEntity>>();
-                        this.topics.set(entity, topic);
+                        topic = new EventBus<HaEventMap<T>>();
+                        this.topics.set(entity, topic as unknown as EventBus<HaEventMap<HaEntity>>);
                     }
                     return topic;
                 }
-                const topic = new EventBus<HaEventMap<HaEntity>>();
-                this.topicsRegex.push({ regex: entity, topic });
+                const topic = new EventBus<HaEventMap<T>>();
+                this.topicsRegex.push({ regex: entity, topic: topic as unknown as EventBus<HaEventMap<HaEntity>> });
                 return topic;
-            },
+            }) as any,
         });
 
         await this.#notifyAllMatch(['moduleLoaded', `module-{${name}}-loaded`], name, module);
         this.#modules[name] = module;
+
+        // Remove any prior entry for this name before appending
+        const existingIdx = this.#scripts.indexOf(name);
+        if (existingIdx >= 0) {
+            this.#scripts.splice(existingIdx, 1);
+        }
         this.#scripts.push(name);
+
         this.#queue[name] = Promise.resolve();
 
         const batch: Promise<any>[] = [];
@@ -437,16 +444,46 @@ export class JSEngine {
         return this.#notifyAllMatch(['module-unloaded', `module-{${name}}-unloaded`], name, module);
     }
 
+    entity<T extends HaEntity>(id: EntityId<T>): T {
+        const entities = this.#cached.get<Record<string, Entity>>('entities');
+        const entity = entities[id as string];
+        if (!entity) throw new Error(`Unknown entity: ${String(id)}`);
+        return entity as unknown as T;
+    }
+
+    async loadScript(name: string, code: string): Promise<void> {
+        const modulePath = path.join(this.#scriptsDir, `${name}.js`);
+        writeFileSync(modulePath, code, 'utf-8');
+
+        const resolved = require.resolve(modulePath);
+        if (require.cache[resolved]) {
+            delete require.cache[resolved];
+        }
+
+        try {
+            const jsModuleExport = require(modulePath) as ModuleExport<JsModuleConstructor>;
+            await this.#scriptLoaded(name, jsModuleExport);
+            this.#scriptStatuses.set(name, 'running');
+        } catch (e) {
+            this.#scriptStatuses.set(name, 'error');
+            this.#logger.error(`Failed to load script ${name}:`, e);
+            throw e;
+        }
+    }
+
+    getScriptStatus(name: string): ScriptStatus {
+        return this.#scriptStatuses.get(name) ?? 'stopped';
+    }
+
+    getLogTail(name: string): string[] {
+        return this.#scriptLogTails.get(name) ?? [];
+    }
+
     start() {
-        // TO DO: maybe rundir.run() should return a promise to indicate init completion
-        this.#rundir.run();
         return this.#ha!.connect();
     }
 
     stop() {
-        // TO DO: maybe rundir.stop() should return a promise to indicate stop completion
-        this.#ha!.stop().then(() => {
-            this.#rundir.stop();
-        });
+        this.#ha!.stop();
     }
 }
