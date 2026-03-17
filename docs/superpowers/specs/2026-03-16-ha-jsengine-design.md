@@ -209,23 +209,72 @@ export const climate = {
 - Collisions (e.g. `light.living_room` and `light.living_room_2`) are resolved by appending the disambiguating suffix (`livingRoom`, `livingRoom2`)
 - If the camelCased entity name starts with a digit, the domain name is prepended (`light.1_living_room` → entity part `1LivingRoom` → `light1LivingRoom`)
 
-**Per-domain entity types** — attributes from entity data, state as a union of known values, actions from the matching services domain:
+**Well-known state types (static, defined in the engine package):**
+
+A small set of universal state types are hardcoded rather than generated, because they appear across many domains and benefit from a stable, human-readable name:
+
+```typescript
+export type PowerState        = 'on' | 'off';
+export type AvailabilityState = 'available' | 'unavailable';
+export type LockState         = 'locked' | 'unlocked';
+```
+
+**Generated named types** — the generator inspects `services.json` selector data to produce named types for enum-like values and numeric ranges. Types are named after the field. If the same field name with identical selector shape appears across multiple services or entities, one shared type is emitted and reused:
+
+```typescript
+/** 'heat' | 'cool' | 'off' | 'auto' | 'fan_only' | 'dry' | 'heat_cool' */
+export type HvacMode = 'heat' | 'cool' | 'off' | 'auto' | 'fan_only' | 'dry' | 'heat_cool';
+
+/** A number from 0 to 255 */
+export type Brightness = number;
+
+/** A number from 0 to 100 */
+export type BrightnessPct = number;
+```
+
+The JSDoc comment is generated from the selector's `min`/`max`/`step`/`options` data in `services.json`. For numeric types this is the valid range; for select types it lists the valid string values.
+
+**Per-domain entity types** — state uses the appropriate named type (well-known or generated), attributes and action parameters reference generated named types with JSDoc:
 
 ```typescript
 export type LightEntity = {
   domain: 'light';
-  state: 'on' | 'off';
+  state: PowerState;
   attributes: {
-    brightness?: number;
+    /** A number from 0 to 255 */
+    brightness?: Brightness;
     rgb_color?: [number, number, number];
     color_temp?: number;
     supported_features?: number;
   };
-  turn_on(params?: { brightness?: number; transition?: number; rgb_color?: [number, number, number] }): void;
-  turn_off(params?: { transition?: number }): void;
+  turn_on(params?: LightTurnOnParams): void;
+  turn_off(params?: LightTurnOffParams): void;
   toggle(): void;
 };
+
+export type LightTurnOnParams = {
+  /** A number from 0 to 255 */
+  brightness?: Brightness;
+  /** A number from 0 to 100 */
+  brightness_pct?: BrightnessPct;
+  /** Transition duration in seconds */
+  transition?: number;
+  rgb_color?: [number, number, number];
+};
 ```
+
+**Zod validation** — a Zod schema is generated alongside each service call params type. The engine validates arguments at call time using the schema, rejects invalid data, and logs a structured error:
+
+```typescript
+export const LightTurnOnParamsSchema = z.object({
+  brightness:     z.number().int().min(0).max(255).optional(),
+  brightness_pct: z.number().min(0).max(100).optional(),
+  transition:     z.number().min(0).optional(),
+  rgb_color:      z.tuple([z.number(), z.number(), z.number()]).optional(),
+});
+```
+
+When a script calls `light.turn_on({ brightness: 300 })`, the engine validates against the schema, logs `[error] light.turn_on: brightness must be ≤ 255`, and does not forward the call to HA. Schema generation is driven entirely by the `selector` data in `services.json` — no hardcoded knowledge of individual services is required.
 
 ### Staleness Detection
 
