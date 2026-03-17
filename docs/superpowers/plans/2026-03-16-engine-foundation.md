@@ -320,8 +320,6 @@ git commit -m "feat: add EntityId<T> phantom type and generic HaEventMap<T>"
 
 ---
 
----
-
 ## Task 4: Remove jsrundir; add explicit script lifecycle to JSEngine
 
 **Files:**
