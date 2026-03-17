@@ -41,14 +41,16 @@ if (require.main === module) {
   process.on('SIGTERM', shutdown);
   process.on('uncaughtException', (err: any) => logger.error(err));
 
-  Promise.all([
-    engine.start(),
-    server.listen({ port, host: '0.0.0.0' }),
-  ]).then(() => {
+  server.listen({ port, host: '0.0.0.0' }).then(() => {
     logger.info(`API listening on port ${port}`);
   }).catch((e: any) => {
-    logger.error(e);
+    logger.error('Failed to start API server:', e);
     shutdown();
+  });
+
+  engine.start().catch((e: any) => {
+    logger.error('Failed to connect to Home Assistant:', e);
+    // Server stays up — HA connection issues are non-fatal for the API
   });
 }
 
