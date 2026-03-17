@@ -1,28 +1,39 @@
 import { LoggerFactory } from '../logger/logger';
-import { HaEntity } from './ha-types';
+import { EventBus } from '../util/event-bus';
+import { AnyHaEntity, EntityId, HaEntity } from './ha-types';
 
-export type JSEngine = {
-    CurrentUser: string;
-    // todo
-    Services: any;
-    Entities: Record<string, HaEntity>;
-    started: boolean;
+export type JsEngine = {
+  currentUser: string;
+  services:    any;
+  entities:    Record<string, HaEntity>;
+  started:     boolean;
+  entity<T extends HaEntity>(id: EntityId<T>): T;
 };
 
-export type JsModuleOptions = {
-    loggerFactory: LoggerFactory;
-    engine: JSEngine;
+export type HaEventMap<T extends HaEntity = HaEntity> = {
+  added:           { id: string; entity: T };
+  removed:         { id: string; entity: T };
+  updated:         { id: string; entity: T; oldEntity?: T; state: T['state']; changed: boolean };
+  'state-changed': { id: string; entity: T; oldEntity?: T; state: T['state']; oldState?: T['state']; changed: true };
+};
+
+export type HaEntityEvents = keyof HaEventMap<HaEntity>;
+
+export type TopicProvider = <T extends HaEntity>(
+  entity: EntityId<T> | RegExp,
+) => EventBus<HaEventMap<T>>;
+
+export type JsModuleConfig = {
+  loggerFactory: LoggerFactory;
+  getTopic:      TopicProvider;
+  engine:        JsEngine;
 };
 
 export type JsModule = {
-    started: (options: JsModuleOptions) => void;
-    stopped: () => void;
-    entityAdded: (id: string, entity: HaEntity) => void;
-    entityRemoved: (id: string, entity: HaEntity) => void;
-    entityUpdated: (id: string, state: string, changed: boolean, entity: HaEntity, oldEntity: HaEntity) => void;
-    entityStateChanged: (id: string, state: string, oldState: string, entity: HaEntity, oldEntity: HaEntity) => void;
+  started?: () => void;
+  stopped?: () => void;
 };
 
 export type JsModuleConstructor = {
-    new (options: JsModuleOptions): JsModule;
+  new (options: JsModuleConfig): JsModule;
 };

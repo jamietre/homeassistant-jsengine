@@ -1,14 +1,16 @@
 import { getLogger, Logger } from '../logger/logger';
-import RunDir from 'jsrundir';
+import { writeFileSync, mkdirSync } from 'fs';
+import path from 'path';
 import { Cache } from './cache';
 import { error } from 'console';
 import { Service } from './service';
 import { Entity } from './entity';
 import { HomeAssistant } from './home-assistant';
-import { JsModuleConstructor } from '../types/jsmodule';
+import { HaEntityEvents, HaEventMap, JsModuleConstructor } from '../types/jsmodule';
 import { immutableProxy } from './immutable-proxy';
-import { HaEntity } from '../types/ha-types';
+import { AnyHaEntity, EntityId, HaEntity, HaEvent } from '../types/ha-types';
 import { isEsModule, ModuleExport } from '../util/es-module';
+import { EventBus, EventBusData } from '../util/event-bus';
 
 const match = (pattern: string, str: string) => {
     return new RegExp(
@@ -21,10 +23,20 @@ const match = (pattern: string, str: string) => {
     ).test(str);
 };
 
+type SystemBusEvents = {
+    started: void;
+    stopped: void;
+};
+
+type ScriptStatus = 'running' | 'stopped' | 'error' | 'disabled';
+
 export class JSEngine {
-    #dir: string | null = null;
-    #rundir: any = null;
+    #scriptsDir: string;
+    #scriptStatuses = new Map<string, ScriptStatus>();
+    #scriptLogTails = new Map<string, string[]>();
     #ha: HomeAssistant | null = null;
+
+    #lifecycleHandlers = new Map<string, { started?: () => void; stopped?: () => void }>();
 
     #scripts: string[] = [];
     #modules: { [key: string]: any } = {};
@@ -40,16 +52,17 @@ export class JSEngine {
 
     #engine: any;
     #logger: Logger;
-    // o
 
-    constructor(options: { dir: string; token: string | undefined; url: string }, logger: Logger) {
-        const { token, dir, url } = options;
+    topics = new Map<string, EventBus<any>>();
+    topicsRegex: Array<{ regex: RegExp; topic: EventBus<any> }> = [];
+
+    systemTopic = this.getOrCreateTopic<SystemBusEvents>('system');
+
+    constructor(options: { scriptsDir: string; token: string | undefined; url: string }, logger: Logger) {
+        const { token, scriptsDir, url } = options;
         this.#logger = logger;
-        this.#dir = dir;
-        this.#logger.info(`Loading scripts from '${this.#dir}'`);
-        this.#rundir = new RunDir(this.#dir);
-        this.#rundir.on('load', (name: string, module: any) => this.#scriptLoaded(name, module));
-        this.#rundir.on('unload', (name: string, module: any) => this.#scriptUnloaded(name, module));
+        this.#scriptsDir = scriptsDir;
+        mkdirSync(this.#scriptsDir, { recursive: true });
 
         if (token) {
             this.#ha = new HomeAssistant({ token, url }, this.#logger);
@@ -63,26 +76,24 @@ export class JSEngine {
         const self = this;
 
         this.#engine = immutableProxy({
-            get CurrentUser() {
+            get currentUser() {
                 return self.#currentUser;
             },
 
-            get Services() {
+            get services() {
                 return self.#services;
             },
 
-            get Entities() {
+            get entities() {
                 return self.#entities;
             },
 
             get started() {
                 return self.#ready;
             },
-        });
 
-        if ((globalThis as any).JSEngine === undefined) {
-            (globalThis as any).JSEngine = this.#engine;
-        }
+            entity: (id: EntityId) => self.entity(id),
+        });
     }
 
     #reset() {
@@ -90,6 +101,11 @@ export class JSEngine {
         this.#cached.reset();
     }
 
+    async publishEvent(topic: string, event: HaEvent, data: unknown) {
+        const bus = this.topics.get(topic);
+        if (!bus) return;
+        bus.publish(event, data);
+    }
     async #notify(script: string, event: string, ...args: any[]) {
         const module = this.#modules[script];
         if (typeof module !== 'object') {
@@ -151,7 +167,9 @@ export class JSEngine {
         this.#logger.info(`Connected to Home Assistant as ${this.#currentUser.name}`);
         this.#ready = true;
 
-        return this.#notifyAll('started');
+        this.systemTopic.publish(`started`, undefined);
+
+        //return this.#notifyAll('started');
     }
 
     #connectionReady() {
@@ -285,6 +303,14 @@ export class JSEngine {
                     }
                 })
                 .then(() => {
+                    const topic = this.getOrCreateTopic<HaEventMap<HaEntity>>(id);
+                    topic.publish('updated', {
+                        id,
+                        state: current.state,
+                        changed,
+                        entity: current as AnyHaEntity,
+                        oldEntity: previous as AnyHaEntity,
+                    });
                     this.#logger.debug(`${id}: ${current.state}${changed ? ' [changed]' : ''}`);
 
                     return this.#notifyAllMatch(
@@ -299,6 +325,15 @@ export class JSEngine {
                 })
                 .then(() => {
                     if (changed) {
+                        this.publish(id, 'state-changed', {
+                            id,
+                            state: current.state,
+                            changed: true,
+                            entity: current as AnyHaEntity,
+                            oldEntity: previous as AnyHaEntity,
+                            oldState: old_state,
+                        });
+
                         this.#logger.debug(`${id}: ${old_state ? old_state : '()'} -> ${current.state}`);
 
                         return this.#notifyAllMatch(
@@ -321,6 +356,16 @@ export class JSEngine {
         return queue;
     }
 
+    publish(id: string, event: HaEntityEvents, data: unknown) {
+        const topic = this.getOrCreateTopic<HaEventMap<HaEntity>>(id);
+        topic.publish(event, data as any);
+        for (const item of this.topicsRegex) {
+            if (item.regex.test(id)) {
+                item.topic.publish(event, data as any);
+            }
+        }
+    }
+
     async #scriptLoaded(name: string, jsModuleExport: ModuleExport<JsModuleConstructor>): Promise<void> {
         // TO DO: wait for pending notifications if previously unloaded (is this needed?)
         this.#logger.info(`Loaded: ${name}`);
@@ -329,11 +374,31 @@ export class JSEngine {
         const module = new Cotr({
             engine: this.#engine,
             loggerFactory: getLogger,
+            getTopic: (<T extends HaEntity>(entity: EntityId<T> | RegExp): EventBus<HaEventMap<T>> => {
+                if (typeof entity === 'string') {
+                    let topic = this.topics.get(entity) as unknown as EventBus<HaEventMap<T>>;
+                    if (!topic) {
+                        topic = new EventBus<HaEventMap<T>>();
+                        this.topics.set(entity, topic as unknown as EventBus<HaEventMap<HaEntity>>);
+                    }
+                    return topic;
+                }
+                const topic = new EventBus<HaEventMap<T>>();
+                this.topicsRegex.push({ regex: entity, topic: topic as unknown as EventBus<HaEventMap<HaEntity>> });
+                return topic;
+            }) as any,
         });
 
         await this.#notifyAllMatch(['moduleLoaded', `module-{${name}}-loaded`], name, module);
         this.#modules[name] = module;
+
+        // Remove any prior entry for this name before appending
+        const existingIdx = this.#scripts.indexOf(name);
+        if (existingIdx >= 0) {
+            this.#scripts.splice(existingIdx, 1);
+        }
         this.#scripts.push(name);
+
         this.#queue[name] = Promise.resolve();
 
         const batch: Promise<any>[] = [];
@@ -346,18 +411,44 @@ export class JSEngine {
 
         await Promise.all(batch);
 
-        if (this.#ready) {
-            return this.#notify(name, 'started');
+        // Remove any prior lifecycle listeners for this script
+        const prior = this.#lifecycleHandlers.get(name);
+        if (prior?.started) this.systemTopic.unsubscribe('started', prior.started);
+        if (prior?.stopped) this.systemTopic.unsubscribe('stopped', prior.stopped);
+
+        const handlers: { started?: () => void; stopped?: () => void } = {};
+
+        if (module.started) {
+            handlers.started = () => module.started!();
+            this.systemTopic.subscribe('started', handlers.started);
         }
+        if (module.stopped) {
+            handlers.stopped = () => module.stopped!();
+            this.systemTopic.subscribe('stopped', handlers.stopped);
+        }
+
+        this.#lifecycleHandlers.set(name, handlers);
+    }
+
+    private getOrCreateTopic<T extends EventBusData>(name: string) {
+        let topic: EventBus | undefined = this.topics.get(name);
+        if (!topic) {
+            topic = new EventBus();
+            this.topics.set(name, topic);
+        }
+        return topic as EventBus<T>;
     }
 
     async #scriptUnloaded(name: string, module: any) {
+        const handlers = this.#lifecycleHandlers.get(name);
+        if (handlers?.started) this.systemTopic.unsubscribe('started', handlers.started);
+        if (handlers?.stopped) this.systemTopic.unsubscribe('stopped', handlers.stopped);
+        this.#lifecycleHandlers.delete(name);
+
         // TO DO: wait for pending notifications (is this needed?)
         this.#logger.info(`Unloaded: ${name}`);
 
-        if (this.#ready) {
-            return this.#notify(name, 'stopped');
-        }
+        this.systemTopic.publish('stopped', undefined);
 
         module.JSEngine = null;
 
@@ -367,16 +458,50 @@ export class JSEngine {
         return this.#notifyAllMatch(['module-unloaded', `module-{${name}}-unloaded`], name, module);
     }
 
+    entity<T extends HaEntity>(id: EntityId<T>): T {
+        const entities = this.#cached.get<Record<string, Entity>>('entities');
+        const entity = entities[id as string];
+        if (!entity) throw new Error(`Unknown entity: ${String(id)}`);
+        return entity as unknown as T;
+    }
+
+    async loadScript(name: string, code: string): Promise<void> {
+        // TODO: if the registry marks this script as disabled, skip loading and preserve 'disabled' status
+        const modulePath = path.join(this.#scriptsDir, `${name}.js`);
+        writeFileSync(modulePath, code, 'utf-8');
+
+        const resolved = require.resolve(modulePath);
+        if (require.cache[resolved]) {
+            delete require.cache[resolved];
+        }
+
+        try {
+            const jsModuleExport = require(modulePath) as ModuleExport<JsModuleConstructor>;
+            await this.#scriptLoaded(name, jsModuleExport);
+            this.#scriptStatuses.set(name, 'running');
+        } catch (e) {
+            this.#scriptStatuses.set(name, 'error');
+            this.#logger.error(`Failed to load script ${name}:`, e);
+            throw e;
+        }
+    }
+
+    getScriptStatus(name: string): ScriptStatus {
+        // TODO: check registry enabled flag and return 'disabled' if set
+        return this.#scriptStatuses.get(name) ?? 'stopped';
+    }
+
+    getLogTail(name: string): string[] {
+        return this.#scriptLogTails.get(name) ?? [];
+    }
+
     start() {
-        // TO DO: maybe rundir.run() should return a promise to indicate init completion
-        this.#rundir.run();
-        return this.#ha!.connect();
+        if (!this.#ha) return Promise.resolve();
+        return this.#ha.connect();
     }
 
     stop() {
-        // TO DO: maybe rundir.stop() should return a promise to indicate stop completion
-        this.#ha!.stop().then(() => {
-            this.#rundir.stop();
-        });
+        if (!this.#ha) return;
+        this.#ha.stop();
     }
 }
