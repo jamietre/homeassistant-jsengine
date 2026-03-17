@@ -36,6 +36,8 @@ export class JSEngine {
     #scriptLogTails = new Map<string, string[]>();
     #ha: HomeAssistant | null = null;
 
+    #lifecycleHandlers = new Map<string, { started?: () => void; stopped?: () => void }>();
+
     #scripts: string[] = [];
     #modules: { [key: string]: any } = {};
     #queue: { [key: string]: Promise<any> } = {};
@@ -409,16 +411,23 @@ export class JSEngine {
 
         await Promise.all(batch);
 
+        // Remove any prior lifecycle listeners for this script
+        const prior = this.#lifecycleHandlers.get(name);
+        if (prior?.started) this.systemTopic.unsubscribe('started', prior.started);
+        if (prior?.stopped) this.systemTopic.unsubscribe('stopped', prior.stopped);
+
+        const handlers: { started?: () => void; stopped?: () => void } = {};
+
         if (module.started) {
-            this.systemTopic.subscribe('started', (evt) => {
-                module.started!();
-            });
+            handlers.started = () => module.started!();
+            this.systemTopic.subscribe('started', handlers.started);
         }
         if (module.stopped) {
-            this.systemTopic.subscribe('stopped', (evt) => {
-                module.stopped!();
-            });
+            handlers.stopped = () => module.stopped!();
+            this.systemTopic.subscribe('stopped', handlers.stopped);
         }
+
+        this.#lifecycleHandlers.set(name, handlers);
     }
 
     private getOrCreateTopic<T extends EventBusData>(name: string) {
@@ -431,6 +440,11 @@ export class JSEngine {
     }
 
     async #scriptUnloaded(name: string, module: any) {
+        const handlers = this.#lifecycleHandlers.get(name);
+        if (handlers?.started) this.systemTopic.unsubscribe('started', handlers.started);
+        if (handlers?.stopped) this.systemTopic.unsubscribe('stopped', handlers.stopped);
+        this.#lifecycleHandlers.delete(name);
+
         // TO DO: wait for pending notifications (is this needed?)
         this.#logger.info(`Unloaded: ${name}`);
 
@@ -452,6 +466,7 @@ export class JSEngine {
     }
 
     async loadScript(name: string, code: string): Promise<void> {
+        // TODO: if the registry marks this script as disabled, skip loading and preserve 'disabled' status
         const modulePath = path.join(this.#scriptsDir, `${name}.js`);
         writeFileSync(modulePath, code, 'utf-8');
 
@@ -472,6 +487,7 @@ export class JSEngine {
     }
 
     getScriptStatus(name: string): ScriptStatus {
+        // TODO: check registry enabled flag and return 'disabled' if set
         return this.#scriptStatuses.get(name) ?? 'stopped';
     }
 
@@ -480,10 +496,12 @@ export class JSEngine {
     }
 
     start() {
-        return this.#ha!.connect();
+        if (!this.#ha) return Promise.resolve();
+        return this.#ha.connect();
     }
 
     stop() {
-        this.#ha!.stop();
+        if (!this.#ha) return;
+        this.#ha.stop();
     }
 }

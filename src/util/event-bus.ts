@@ -38,6 +38,11 @@ export class EventBus<T extends EventBusData<string> = EventBusData<string>> {
         this.replayEvents(eventName, cb);
     }
 
+    unsubscribe<TKey extends keyof T>(eventName: TKey, cb: Handler<T[TKey]>) {
+        const subs = this.subscribers.get(eventName as string);
+        subs?.delete(cb);
+    }
+
     subscribeAll(cb: (evt: T[keyof T]) => void) {
         let has = this.allSubscribers.has(cb);
         if (!has) {
