@@ -1,209 +1,200 @@
-# Fork
+# homeassistant-jsengine
 
-Forked from very cool [puzzle-star/homeassistant-jsengine](https://github.com/puzzle-star/homeassistant-jsengine) project.
+A TypeScript automation engine for Home Assistant. Connect to your HA instance, write scripts in TypeScript with full type safety, deploy them via REST API, and manage them from a dashboard.
 
-This fork is for my use. Goal is to build out something easier for me to maintain and extend.
+> **Status:** Plan 1 of 3 complete — the engine and REST API are built. Plans 2 (type generator) and 3 (developer template + CLI) are next.
 
-## Complete
+---
 
-- [x] Convert to TypeScript
-- [x] Add some dev tooling
-  - [x] nodemon, ts-node for auto restarting on change
-- [x] Factoring changes/arch
-  - [x] Add a centralized logger
+## How it works
 
-## In Progress
+The engine runs as a server alongside your Home Assistant instance. It connects to HA via WebSocket, maintains live entity state, and exposes a REST API that accepts compiled JavaScript bundles. Scripts are loaded explicitly via `POST /deploy` and managed (enabled/disabled) via the API.
 
-- [ ] Implement `sendMessage` abstraction as method on entities for actions on entities
-- [ ] Factoring changes/arch
-  - [ ] Add scoped pub/sub instead, e.g. `hajs.subscribe(entity, (event: Event) => { ... }`
+User scripts are TypeScript classes that receive a typed `engine` and `getTopic` factory via constructor injection. Entity IDs are branded strings produced by a code generator (Plan 2), so `getTopic(light.livingRoom)` returns an `EventBus<HaEventMap<LightEntity>>` — no casting needed.
 
-## To Do
- 
-- [ ] Factoring changes/arch
-  - [ ] Expose interfaces instead of native classes as types
-  - [ ] Complete implementation of types for classes
-  - [ ] Remove things shared on global/singletons
-  - [ ] Factor promise chains into separate async functions
-  - [ ] Remove pattern-matching API to simplify
-- [ ] Generate/code types for all entity types
-- [ ] Code generation for types of actual entities available (what does implementation of this look like? Utility function/binary?)
-- [ ] pm2 to monitor/restart on crash 
-- [ ] Remove dependnecy on js-rundir, use native fs watch
-- [ ] Expose good types for Home Assistant entities
-- [ ] Publish a types package that can be consumed from npm to simplify developing modules w/ good types
-- [ ] Make a docker image that monitors a volume
-- [ ] Maybe make a real home assitant add-in?
+---
 
+## Running the engine
 
-\[Original Readme\]
-# Home Assistant JS Engine
+### Docker
 
-This is an external engine that exposes Home Assistant entities and services to JavaScript scripts. It works by connecting to HASS WebSocket API, and encapsulates all available entities as JS objects to be able to simply interact with them using JavaScript.
+```sh
+docker build -t homeassistant-jsengine .
 
-Scripts are constantly monitored in the `scripts` directory. They will be loaded when the service is started, reloaded when modified, and unloaded when deleted (also before reload).
-
-JSON files will also be monitored and (re)loaded automatically. Scripts are notified when this happens. This provides a way to configure the scripts (and change their configuration on-the-fly), if your scripts want to support this.
-
-**This is not a homeassistant offical integration.**
-
-## Why
-
-If you are used to JavaScript and do not want to go through the learning curve of Python and YAML templates (or just prefer JS for your automations), this comes to be a very handy tool that adds the capability to use JavaScript for your more complex automations, that may not be easily (or possible at all) implemented using templates.
-
-After waiting for a proper JS integration and seeing that attempts were stalled for a long time, I decided to run my own one.
-
-## Status
-
-It's been working since 2022 for my automations. It is still under heavy development and plan to add more capabilities provided by the WebSocket API.
-
-There is still some code cleanup pending, and several to-dos, but it is in a totally working state.
-
-## Basic install
-
-The engine is meant to be used as a Linux service, but can be run directly from commandline.
-
-Please refer to the below instructions for [running as a service](https://github.com/puzzle-star/homeassistant-jsengine/tree/master?tab=readme-ov-file#installing-as-a-service-systemd) once the basic install is complete.
-
-### Create the Access Token
-
-Please refer to [how to create an access token](https://developers.home-assistant.io/docs/auth_api/#long-lived-access-token) in Home Assistant documentation. You can also create one from the UI, under the `User Profile` page, `Security` tab:
-
-![image](https://github.com/user-attachments/assets/e1c0a3f6-f2aa-45ba-ba80-48d04176ef41)
-
-### Install and Test
-
-```
-mkdir -p /opt/homeassistant/homeassistant-jsengine/
-cd /opt/homeassistant/homeassistant-jsengine/
-npm install homeassistant-jsengine
-echo 'HASS_TOKEN="[your HASS access token - create one for the hass user you want the scripts to run as]"' >hass-token.env
-chmod 640 hass-token.env
-mkdir -p scripts
-
-source ./hass-token.env && export HASS_TOKEN && nodejs node_modules/homeassistant-jsengine/jsengine.js node_modules/homeassistant-jsengine/examples
+docker run \
+  -e HASS_TOKEN=<your-long-lived-token> \
+  -e HASS_URL=http://192.168.1.10:8123 \
+  -p 3000:3000 \
+  homeassistant-jsengine
 ```
 
-### Running from the command-line
+### Directly (requires Node 22 + pnpm via mise)
 
-```
-source ./hass-token.env && export HASS_TOKEN && nodejs node_modules/homeassistant-jsengine/jsengine.js scripts
-```
+```sh
+mise install
+pnpm install
+pnpm build
 
-**Output:**
-
-```
-(jsengine) Loaded: /opt/git/homeassistant-jsengine/examples/test.js
-(test) module /opt/git/homeassistant-jsengine/examples/test.js: loaded
-(jsengine) Connected to Home Assistant as ...
-(test) started
-(test) current user: ...
-(test) light.home_office: off -> on
-(test) light.home_office_light_2_2: off -> on
-(test) light.home_office_light_1_1: off -> on
-(test) light.home_office_light_2_1: off -> on
-(test) light.home_office_light_1_2: off -> on
-(test) light.home_office: on
-(test) sensor.inverter_battery_capacity: ...
-^C
-(jsengine) Unloaded: /opt/git/homeassistant-jsengine/examples/test.js
-(test) stopped
+HASS_TOKEN=<token> HASS_URL=http://192.168.1.10:8123 node dist/index.js
 ```
 
-## Usage:
+### Environment variables
 
-### Scripts Location
+| Variable      | Required | Default            | Purpose                            |
+|---------------|----------|--------------------|------------------------------------|
+| `HASS_TOKEN`  | yes      | —                  | Long-lived HA access token         |
+| `HASS_URL`    | yes      | —                  | HA instance URL                    |
+| `SCRIPTS_DIR` | no       | `../scripts`       | Directory for deployed script files |
+| `ENGINE_PORT` | no       | `3000`             | Port the REST API listens on       |
 
-By default, in `[install-path]/scripts`. They will be executed automatically and reloaded if modified.
+---
 
-### API available to scripts
+## REST API
 
-See the `test.js` script in examples directory for reference
+### `GET /health`
 
-**Exposed events:** called automatically when a matching event happens
-
-- **started:** called when the script is loaded **and** the service is connected to HASS
-- **stopped:** called when the script is unloaded **or** the service is disconnected from HASS
-- **module-loaded** (name, module): called when a new script file is loaded
-- **module-unloaded** (name, module): called when a script file is unloaded
-- **entity-added** (id, entity): called when an entity is added
-- **entity-removed** (id, entity): called when an entity is removed
-- **entity-updated** (id, state, changed, old_state, entity, old_entity): called when an entity receives an update (either state or attributes changed)
-- **entity-state-changed** (id, state, old_state, entity, old_entity): called when an entity state changes
-
-**Wildcard events:** called based on entity-id and states basic matching. Matches can use wildcards (\*) in all or part of the pattern. Braces `{}` around patterns are mandatory.
-
-- **module-{** _script-name_ **}-loaded** (name, module)
-- **module-{** _script-name_ **}-unloaded** (name, module)
-- **entity-{** _entity-id_ **}-added** (id, entity)
-- **entity-{** _entity-id_ **}-removed** (id, entity)
-- **entity-{** _entity-id_ **}-updated** (id, state, changed, old_state, entity, old_entity)
-- **entity-{** _entity-id_ **}-state-changed** (id, state, old_state, entity, old_entity)
-- **entity-{** _entity-id_ **}-state-changed-to-{** _state_ **}** (id, state, old_state, entity, old_entity)
-- **entity-{** _entity-id_ **}-state-changed-from-{** _state_ **}-to-{** _state_ **}** (id, state, old_state, entity, old_entity)
-
-**Accessing the global `JSEngine` object:**
+Liveness check.
 
 ```
-log(`entities:`, Object.keys(JSEngine.Entities).sort().join(', '));
-log(`services:`, Object.keys(JSEngine.Services).sort().join(', '));`
-log(`current user:`, JSEngine.CurrentUser);
+200 { ok: true }
 ```
 
-**Acessing a single `entity` object:**
+### `POST /deploy`
 
-```
-log(JSEngine.Entities['my_light_entity']);
+Deploy a bundle of compiled scripts. Upserts by name — scripts not in the bundle are left unchanged.
 
-(example) Entity {
-  id: 'my_light_entity',
-  domain: 'light',
-  name: 'My Light Entity',
-  groups: { ... },
-  entity_id: 'light.my_light_entity', <-- just the same as 'id'
-  state: 'on',
-  attributes: {
-    supported_color_modes: [ 'color_temp', 'xy' ],
-    min_color_temp_kelvin: 2202,
-    max_color_temp_kelvin: 4000,
-    color_mode: 'color_temp',
-    brightness: 255,
-    color_temp_kelvin: 3717,
-    color_temp: 269,
-    hs_color: [ 26.983, 40.252 ],
-    rgb_color: [ 255, 198, 152 ],
-    xy_color: [ 0.439, 0.37 ],
-    ...
-  },
-  last_changed: '...',
-  last_updated: '...',
-  turn_on: [Function: turn_on],
-  turn_off: [Function: turn_off],
-  toggle: [Function: toggle]
+```json
+{
+  "scripts": [
+    { "name": "garage", "code": "..." },
+    { "name": "heating", "code": "..." }
+  ],
+  "typesHash": "sha256:abc123"
 }
 ```
 
-**Invoking `entity` object actions:**
-
 ```
-JSEngine.Entities['light.my_light_entity'].turn_off();
-JSEngine.Entities['light.my_light_entity'].turn_on();
-JSEngine.Entities['light.my_light_entity'].toggle();
-
-JSEngine.Entities['light.my_light_entity'].turn_on( { "brightness_pct": 100, "rgb_color": [255,128,255], "transition": 2 } );
+200 { "loaded": ["garage", "heating"] }
+400 { "error": ... }   — invalid bundle shape
+500 { "error": ... }   — script failed to load
 ```
 
-## Installing as a service (systemd)
+### `GET /scripts`
 
-Edit the systemd service file `install/homeassistant-jsengine.service` to adapt it to your installed system username path. The provided one assumes installatation in `/opt/homeassistant/homeassistant-jsengine` under user `homeassistant`, and install it.
+List all deployed scripts with runtime status and log tail.
 
-Please remember to update the [authentication token](https://developers.home-assistant.io/docs/auth_api/#long-lived-access-token) as per [basic install instructions](https://github.com/puzzle-star/homeassistant-jsengine/tree/master?tab=readme-ov-file#basic-install).
+```json
+[
+  {
+    "name": "garage",
+    "enabled": true,
+    "lastDeployedAt": "2026-03-17T00:00:00Z",
+    "typesHash": "sha256:abc123",
+    "status": "running",
+    "logTail": ["Garage door opened"]
+  }
+]
+```
 
-**Edit your `homeassistant-jsengine.service` file if needed to adapt it to your instalation path**
+Status values: `running` | `stopped` | `error` | `disabled`
+
+### `POST /scripts/:name/enable`
+
+Enable a script.
 
 ```
-cp -av node_modules/homeassistant-jsengine/install/homeassistant-jsengine.service /usr/local/lib/systemd/system/
-systemctl daemon-reload
-systemctl enable homeassistant-jsengine
-systemctl start homeassistant-jsengine
+200 { ok: true }
+404 { error: "Unknown script: garage" }
 ```
+
+### `POST /scripts/:name/disable`
+
+Disable a script. (Currently persists the flag — enforcement is planned for a future update.)
+
+```
+200 { ok: true }
+404 { error: "Unknown script: garage" }
+```
+
+---
+
+## Writing scripts
+
+Scripts are TypeScript classes exported as default. The constructor receives `engine`, `getTopic`, and `loggerFactory`.
+
+```typescript
+import type { JsModuleConfig } from 'homeassistant-jsengine';
+// EntityId values and per-entity types come from the generated ha.d.ts (Plan 2)
+import { binarySensor, light } from '../generated/ha';
+
+export default class GarageAutomation {
+  constructor({ engine, getTopic, loggerFactory }: JsModuleConfig) {
+    const logger = loggerFactory({ source: 'GarageAutomation' });
+
+    // getTopic infers the entity type from the branded EntityId<T> value
+    const door = getTopic(binarySensor.garageDoor);
+
+    door.subscribe('state-changed', (event) => {
+      // event.entity is typed as BinarySensorEntity — no cast needed
+      if (event.state === 'on') {
+        logger.info('Garage door opened');
+        engine.entity(light.garage).turn_on({ brightness: 255 });
+      }
+    });
+  }
+
+  started() { /* called when engine connects to HA */ }
+  stopped() { /* called on disconnect */ }
+}
+```
+
+Compile to CommonJS (`"module": "commonjs"` in tsconfig), then deploy:
+
+```sh
+curl -X POST http://localhost:3000/deploy \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "scripts": [{ "name": "garage", "code": "<compiled js>" }],
+    "typesHash": "manual"
+  }'
+```
+
+---
+
+## Type system
+
+`EntityId<T>` is a phantom branded string. Values are emitted by the type generator (Plan 2) alongside per-entity and per-domain types derived from live HA `services` and `entities` data.
+
+Well-known state types are defined in the engine package:
+
+```typescript
+type PowerState        = 'on' | 'off';
+type AvailabilityState = 'available' | 'unavailable';
+type LockState         = 'locked' | 'unlocked';
+```
+
+Generated types are named after HA field names, with JSDoc from `services.json` selector data, and a Zod schema for runtime validation of service call parameters.
+
+---
+
+## Development
+
+```sh
+mise install        # install Node 22 + pnpm 10.16.1
+pnpm install
+pnpm test           # run test suite (vitest)
+pnpm typecheck      # TypeScript check
+pnpm build          # compile to dist/
+```
+
+### Tests
+
+25 tests across 6 files covering type correctness, ScriptRegistry persistence, JSEngine lifecycle, and all API routes.
+
+---
+
+## Roadmap
+
+- **Plan 2:** Type generator — `sync-types` CLI that connects to HA, fetches live services/entities, and produces a `ha.d.ts` with branded `EntityId<T>` values, typed entity interfaces, and Zod schemas
+- **Plan 3:** Developer template — starter project with `jsengine dev`, `jsengine deploy`, bootstrap script, and vitest unit test support
+- **Future:** Home Assistant Supervisor add-on, web dashboard
