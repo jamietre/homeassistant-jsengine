@@ -34,12 +34,15 @@ if (require.main === module) {
 
   const shutdown = async () => {
     await server.close();
-    engine.stop();
+    engine.stop(); // fire-and-forget: stop() is synchronous in current implementation
   };
 
   process.on('SIGINT',  shutdown);
   process.on('SIGTERM', shutdown);
-  process.on('uncaughtException', (err: any) => logger.error(err));
+  process.on('uncaughtException', (err: any) => {
+    logger.error(err);
+    process.exit(1);
+  });
 
   server.listen({ port, host: '0.0.0.0' }).then(() => {
     logger.info(`API listening on port ${port}`);
