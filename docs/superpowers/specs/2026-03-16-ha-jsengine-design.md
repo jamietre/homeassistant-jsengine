@@ -20,10 +20,12 @@ The existing codebase, extended with a REST API and dashboard.
 ### Responsibilities
 
 - Connect to Home Assistant via WebSocket (`home-assistant-js-websocket`)
-- Execute user scripts in a watched directory, hot-reloading on change
-- Expose a REST API for script deployment
+- Load, execute, and lifecycle-manage user scripts explicitly via the REST API
+- Expose a REST API for script deployment and management
 - Serve a web dashboard for script management
 - Track a hash of live HA data to detect type staleness
+
+Script activation is fully explicit — scripts are loaded when deployed via `POST /deploy` and enabled/disabled via the management API. There is no filesystem watching or automatic hot-reload. The `jsrundir` dependency is removed.
 
 ### Environment Variables
 
