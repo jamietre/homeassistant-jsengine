@@ -416,7 +416,7 @@ export class JSEngine {
         }
         if (module.stopped) {
             this.systemTopic.subscribe('stopped', (evt) => {
-                module.started!();
+                module.stopped!();
             });
         }
     }
