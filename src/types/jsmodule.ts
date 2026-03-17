@@ -1,68 +1,39 @@
 import { LoggerFactory } from '../logger/logger';
 import { EventBus } from '../util/event-bus';
-import { AnyHaEntity, HaEntity } from './ha-types';
+import { AnyHaEntity, EntityId, HaEntity } from './ha-types';
 
 export type JsEngine = {
-    currentUser: string;
-
-    // todo
-    Services: any;
-    Entities: Record<string, HaEntity>;
-    started: boolean;
+  currentUser: string;
+  services:    any;
+  entities:    Record<string, HaEntity>;
+  started:     boolean;
+  entity<T extends HaEntity>(id: EntityId<T>): T;
 };
 
-type EventBase = {
-    id: string;
-    entity: AnyHaEntity;
+export type HaEventMap<T extends HaEntity = HaEntity> = {
+  added:           { id: string; entity: T };
+  removed:         { id: string; entity: T };
+  updated:         { id: string; entity: T; oldEntity?: T; state: T['state']; changed: boolean };
+  'state-changed': { id: string; entity: T; oldEntity?: T; state: T['state']; oldState?: T['state']; changed: true };
 };
 
-type AddedEvent = EventBase;
-type RemovedEvent = EventBase;
-type UpdatedEvent = EventBase & {
-    state: string;
-    changed: boolean;
-    oldEntity?: AnyHaEntity;
-};
-type StateChangedEvent = EventBase & {
-    state: string;
-    oldState?: string;
-    changed: boolean;
-    entity: AnyHaEntity;
-    oldEntity?: AnyHaEntity;
-};
+export type HaEntityEvents = keyof HaEventMap<HaEntity>;
 
-export type HaEvents = AddedEvent | RemovedEvent | UpdatedEvent | StateChangedEvent;
-
-export type HaEventMap = {
-    added: HaEvent<'added', AddedEvent>;
-    removed: HaEvent<'removed', RemovedEvent>;
-    updated: HaEvent<'updated', UpdatedEvent>;
-    'state-changed': HaEvent<'state-changed', StateChangedEvent>;
-};
-
-export type HaEvent<TKey, TData> = {
-    id: string;
-    event: TKey;
-} & TData;
-
-export type HaEntityEvents = keyof HaEventMap;
-export type TopicProvider = (entity: string | RegExp) => EventBus<HaEventMap>;
+export type TopicProvider = <T extends HaEntity>(
+  entity: EntityId<T> | RegExp,
+) => EventBus<HaEventMap<T>>;
 
 export type JsModuleConfig = {
-    loggerFactory: LoggerFactory;
-    getTopic: TopicProvider;
-    engine: JsEngine;
+  loggerFactory: LoggerFactory;
+  getTopic:      TopicProvider;
+  engine:        JsEngine;
 };
 
 export type JsModule = {
-    started?: () => void;
-    stopped?: () => void;
-    // entityAdded: (id: string, entity: HaEntity) => void;
-    // entityRemoved: (id: string, entity: HaEntity) => void;
-    // entityUpdated: (id: string, state: string, changed: boolean, entity: HaEntity, oldEntity: HaEntity) => void;
-    // entityStateChanged: (id: string, state: string, oldState: string, entity: HaEntity, oldEntity: HaEntity) => void;
+  started?: () => void;
+  stopped?: () => void;
 };
 
 export type JsModuleConstructor = {
-    new (options: JsModuleConfig): JsModule;
+  new (options: JsModuleConfig): JsModule;
 };

@@ -7,7 +7,7 @@ import { Entity } from './entity';
 import { HomeAssistant } from './home-assistant';
 import { HaEntityEvents, HaEventMap, JsModuleConstructor } from '../types/jsmodule';
 import { immutableProxy } from './immutable-proxy';
-import { AnyHaEntity, HaEntity, HaEvent } from '../types/ha-types';
+import { AnyHaEntity, EntityId, HaEntity, HaEvent } from '../types/ha-types';
 import { isEsModule, ModuleExport } from '../util/es-module';
 import { EventBus, EventBusData } from '../util/event-bus';
 
@@ -302,10 +302,9 @@ export class JSEngine {
                     }
                 })
                 .then(() => {
-                    const topic = this.getOrCreateTopic<HaEventMap>(id);
+                    const topic = this.getOrCreateTopic<HaEventMap<HaEntity>>(id);
                     topic.publish('updated', {
                         id,
-                        event: 'updated',
                         state: current.state,
                         changed,
                         entity: current as AnyHaEntity,
@@ -327,11 +326,10 @@ export class JSEngine {
                     if (changed) {
                         this.publish(id, 'state-changed', {
                             id,
-                            event: 'state-changed',
                             state: current.state,
                             changed: true,
-                            entity: current,
-                            oldEntity: previous,
+                            entity: current as AnyHaEntity,
+                            oldEntity: previous as AnyHaEntity,
                             oldState: old_state,
                         });
 
@@ -358,7 +356,7 @@ export class JSEngine {
     }
 
     publish(id: string, event: HaEntityEvents, data: unknown) {
-        const topic = this.getOrCreateTopic<HaEventMap>(id);
+        const topic = this.getOrCreateTopic<HaEventMap<HaEntity>>(id);
         topic.publish(event, data as any);
         for (const item of this.topicsRegex) {
             if (item.regex.test(id)) {
@@ -374,16 +372,16 @@ export class JSEngine {
         const module = new Cotr({
             engine: this.#engine,
             loggerFactory: getLogger,
-            getTopic: (entity: string | RegExp) => {
+            getTopic: (entity: EntityId<HaEntity> | RegExp) => {
                 if (typeof entity === 'string') {
-                    let topic = this.topics.get(entity) as unknown as EventBus<HaEventMap>;
+                    let topic = this.topics.get(entity) as unknown as EventBus<HaEventMap<HaEntity>>;
                     if (!topic) {
-                        topic = new EventBus<HaEventMap>();
+                        topic = new EventBus<HaEventMap<HaEntity>>();
                         this.topics.set(entity, topic);
                     }
                     return topic;
                 }
-                const topic = new EventBus<HaEventMap>();
+                const topic = new EventBus<HaEventMap<HaEntity>>();
                 this.topicsRegex.push({ regex: entity, topic });
                 return topic;
             },
