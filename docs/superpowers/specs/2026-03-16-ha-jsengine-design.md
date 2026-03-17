@@ -25,6 +25,17 @@ The existing codebase, extended with a REST API and dashboard.
 - Serve a web dashboard for script management
 - Track a hash of live HA data to detect type staleness
 
+### Environment Variables
+
+The engine reads its configuration from environment variables at startup. The current code hard-codes the HA URL and must be updated as part of this work:
+
+| Variable      | Purpose                              |
+|---------------|--------------------------------------|
+| `HASS_TOKEN`  | Long-lived HA access token           |
+| `HASS_URL`    | URL of the HA instance (e.g. `http://192.168.1.10:8123`) |
+| `ENGINE_PORT` | Port the REST API listens on (default `3000`) |
+| `LOG_LEVEL`   | Log verbosity                        |
+
 ### REST API (MVP)
 
 ```
@@ -46,20 +57,24 @@ GET  /health                  Liveness check
 }
 ```
 
-The `typesHash` is stored per deploy so the dashboard can show whether running scripts were built against current HA data.
+**Deploy semantics:** a deploy is an upsert by name. Scripts named in the bundle are added or replaced; scripts not named in the bundle are left unchanged. To remove a script, disable it via `POST /scripts/:name/disable` or delete it manually from the scripts directory.
+
+The `typesHash` is stored per script so the dashboard can show whether each script was built against current HA data.
 
 > **Security:** Authentication on the REST API is out of scope for MVP. The engine is not expected to be exposed publicly; access control is left to the service owner.
 
 ### Script Registry
 
-A `registry.json` file persisted alongside scripts. Tracks per-script: `name`, `enabled`, `lastDeployedAt`, `typesHash`. Survives restarts.
+A `registry.json` file persisted to disk alongside the scripts directory. Tracks per-script: `name`, `enabled`, `lastDeployedAt`, `typesHash`. This file survives container restarts.
+
+Runtime state (script status: running / stopped / error, and log tail) is **ephemeral in-memory only** — it is not persisted. The `GET /scripts` endpoint serves this live state from memory; on restart, status resets to the engine's initial state and log tails are empty.
 
 ### Dashboard UI
 
 Minimal web UI, server-rendered or single-page (no heavy framework):
 
 - Script list: name, status (running / stopped / error / disabled), last deployed
-- Per-script log tail
+- Per-script log tail (ephemeral — cleared on restart)
 - "Types may be stale" banner when live HA data hash differs from the deployed `typesHash`
 - Enable/disable toggle
 
@@ -91,6 +106,16 @@ Phase 2 (future): proper Home Assistant Supervisor add-on.
 
 A TypeScript starter project that users bootstrap once per HA installation. Contains their scripts, generated types, and CLI tooling.
 
+### Developer Project Environment Variables
+
+Stored in `.env` (gitignored). Required for `dev` and `sync-types`; `ENGINE_URL` is also required for `deploy`.
+
+| Variable      | Purpose                                                       |
+|---------------|---------------------------------------------------------------|
+| `HASS_TOKEN`  | Long-lived HA access token (same value as the engine's `HASS_TOKEN`) |
+| `HASS_URL`    | URL of the HA instance (same value as the engine's `HASS_URL`) |
+| `ENGINE_URL`  | URL of the running engine (e.g. `http://192.168.1.10:3000`)  |
+
 ### Bootstrap
 
 A shell script handles first-time setup:
@@ -102,6 +127,8 @@ curl -fsSL .../bootstrap.sh | sh
 # Generates ha.d.ts and .ha-types-hash
 # Scaffolds project structure
 ```
+
+> **Security note:** Piping to shell without integrity verification is a known risk. A versioned `npx` alternative (e.g. `npx homeassistant-jsengine-init`) will be provided as a safer option. Checksum verification of the shell script is left to the user for MVP.
 
 ### Project Structure
 
@@ -137,6 +164,8 @@ my-home-scripts/
 
 The `jsengine` CLI is a dev dependency — not installed globally.
 
+**`pnpm dev`** starts a local development server that connects directly to the live HA instance (using credentials from `.env`), watches `scripts/` for TypeScript changes, recompiles on save, and hot-reloads scripts in-process. This is a live connection — `.env` credentials (`HASS_TOKEN`, `HASS_URL`) are required to run `dev`. On startup it also runs a staleness check (see below).
+
 ---
 
 ## Type Generation (`sync-types`)
@@ -145,10 +174,10 @@ Connects directly to HA (not via the engine) using credentials from `.env`. Fetc
 
 ### Generated Output Shape
 
-**Branded EntityId** — carries the entity's specific type as a phantom type parameter:
+**Branded EntityId** — carries the entity's specific type as a phantom type parameter. Defined once in the static engine package; all generated values are cast to this type:
 
 ```typescript
-// Defined in the engine package (static)
+// Defined in the engine package (static, not generated)
 export type EntityId<T extends HaEntity = HaEntity> =
   string & { readonly _brand: 'EntityId'; readonly _type: T };
 ```
@@ -172,7 +201,11 @@ export const climate = {
 } as const;
 ```
 
-Naming: HA domain names are camelCased directly (`binary_sensor` → `binarySensor`). Entity names within a domain are camelCased from the portion after the dot.
+**Naming rules:**
+- Domain names are camelCased (`binary_sensor` → `binarySensor`)
+- Entity names are camelCased from the portion after the domain dot (`living_room` → `livingRoom`)
+- Collisions (e.g. `light.living_room` and `light.living_room_2`) are resolved by appending the disambiguating suffix (`livingRoom`, `livingRoom2`)
+- If the camelCased entity name starts with a digit, the domain name is prepended (`light.1_living_room` → entity part `1LivingRoom` → `light1LivingRoom`)
 
 **Per-domain entity types** — attributes from entity data, state as a union of known values, actions from the matching services domain:
 
@@ -194,7 +227,7 @@ export type LightEntity = {
 
 ### Staleness Detection
 
-On `pnpm dev` startup, the engine CLI connects to HA, fetches current services+entities, hashes them, and compares to `.ha-types-hash`. If they differ:
+On `pnpm dev` startup, the CLI connects to HA, fetches current services+entities, hashes them, and compares to `.ha-types-hash`. If they differ:
 
 ```
 ⚠  Types may be stale — entities or services have changed since last sync.
@@ -221,7 +254,7 @@ export default class GarageAutomation {
     const door = getTopic(binarySensor.garageDoor);
 
     door.subscribe('state-changed', (event) => {
-      // event.entity is BinarySensorEntity — fully typed
+      // event.entity is BinarySensorEntity — fully typed, no cast
       if (event.state === 'on') {
         logger.info('Garage door opened');
         engine.entity(light.garage).turn_on({ brightness: 255 });
@@ -234,17 +267,32 @@ export default class GarageAutomation {
 }
 ```
 
-**Key signatures in the engine package:**
+### Key Type Signatures (engine package)
 
 ```typescript
-// getTopic infers entity type from the branded value
+// getTopic is generic over T, inferred from the branded EntityId<T> value.
+// Returns an EventBus whose event data is narrowed to T's shape.
 getTopic<T extends HaEntity>(entity: EntityId<T>): EventBus<HaEventMap<T>>
 
-// engine.entity() returns the specific type without casting
+// engine.entity() casts the live runtime Entity to T for the caller's benefit.
+// No runtime validation — T must be structurally compatible with what
+// the Entity proxy exposes (attributes + proxied service methods).
 engine.entity<T extends HaEntity>(id: EntityId<T>): T
 ```
 
-The engine package defines `EntityId<T>`, `HaEntity`, `JsModuleConfig`, and the event map generics. It does not need to know about specific entity types at build time — the phantom type does that work at the call site.
+**`HaEventMap<T>` is generic** — it narrows `entity` and `state` to the specific type `T`:
+
+```typescript
+// In the engine package (static)
+export type HaEventMap<T extends HaEntity = HaEntity> = {
+  added:          { id: string; entity: T };
+  removed:        { id: string; entity: T };
+  updated:        { id: string; entity: T; oldEntity?: T; state: T['state']; changed: boolean };
+  'state-changed':{ id: string; entity: T; oldEntity?: T; state: T['state']; oldState?: T['state']; changed: true };
+};
+```
+
+**Runtime / type alignment:** The engine's `Entity` class uses a `Proxy` to expose service methods at runtime. The generated per-domain entity types (e.g. `LightEntity`) must be structurally compatible with what this proxy produces — i.e., the attribute fields and method signatures in the generated type must match the methods the proxy will attach at runtime. The type generator is responsible for emitting only the methods that the services data says are available for that domain. There is no runtime enforcement — if the generated types drift from the proxy's actual output, errors will surface at runtime rather than compile time.
 
 ### Unit Testing
 
@@ -280,14 +328,14 @@ describe('GarageAutomation', () => {
 # First time
 curl -fsSL .../bootstrap.sh | sh
 
-# Develop
-pnpm dev              # connects to HA, hot-reloads scripts on save
+# Develop (requires live HA connection via .env)
+pnpm dev              # connects to HA, hot-reloads scripts on save, checks staleness
 
 # When HA changes
-pnpm sync-types       # regenerates ha.d.ts, TS errors surface immediately
+pnpm sync-types       # regenerates ha.d.ts, TS errors surface immediately in editor
 
 # Deploy
-pnpm deploy           # tsc + POST bundle to engine
+pnpm deploy           # tsc + POST bundle to engine (upsert by name)
 ```
 
 ---
