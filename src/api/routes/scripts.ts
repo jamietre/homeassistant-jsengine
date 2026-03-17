@@ -20,8 +20,11 @@ export const scriptsRoute: FastifyPluginAsync<Options> = async (app, { engine, r
     try {
       registry.setEnabled(name, true);
       return reply.send({ ok: true });
-    } catch {
-      return reply.status(404).send({ error: `Unknown script: ${name}` });
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith('Unknown script:')) {
+        return reply.status(404).send({ error: e.message });
+      }
+      throw e;
     }
   });
 
@@ -30,8 +33,11 @@ export const scriptsRoute: FastifyPluginAsync<Options> = async (app, { engine, r
     try {
       registry.setEnabled(name, false);
       return reply.send({ ok: true });
-    } catch {
-      return reply.status(404).send({ error: `Unknown script: ${name}` });
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith('Unknown script:')) {
+        return reply.status(404).send({ error: e.message });
+      }
+      throw e;
     }
   });
 };

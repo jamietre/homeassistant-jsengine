@@ -26,8 +26,9 @@ export const deployRoute: FastifyPluginAsync<Options> = async (app, { engine, re
         await engine.loadScript(script.name, script.code);
         registry.upsert(script.name, typesHash);
       }
-    } catch (e: any) {
-      return reply.status(500).send({ error: e.message });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return reply.status(500).send({ error: message });
     }
 
     return reply.send({ loaded: scripts.map((s) => s.name) });
